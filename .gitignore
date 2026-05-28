@@ -1,0 +1,9 @@
+.direnv/
+
+/generated/
+/target/
+**/*.rs.bk
+
+# Editors
+.idea/
+.vscode/
