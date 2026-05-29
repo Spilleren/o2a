@@ -25,15 +25,19 @@ pub fn generate_script(
         .cloned()
         .collect::<Vec<_>>();
 
-    let required_query = parameters_to_flags(&required_query_parameters, |name, var| {
-        format!("--data-urlencode \"{name}=${var}\"")
-    });
-
-    let optional_query = parameters_to_flags(&optional_query_parameters, |name, var| {
-        format!("# --data-urlencode \"{name}=${var}\"")
-    });
-
     let path = replace_path_params(path);
+    let mut url = format!("{base_url}{path}");
+
+    let query = build_query_string(&required_query_parameters, &optional_query_parameters);
+
+    if !query.is_empty() {
+        url.push_str(&query);
+    }
+
+    let mut flags: Vec<String> = Vec::new();
+    flags.push(format!("  --url \"{url}\""));
+    flags.extend(headers.iter().map(|h| format!("  {h}")));
+
     let variables = parameters_to_variables(
         &path_parameters
             .into_iter()
@@ -41,12 +45,6 @@ pub fn generate_script(
             .chain(optional_query_parameters)
             .collect::<Vec<_>>(),
     );
-
-    let mut flags: Vec<String> = Vec::new();
-    flags.push(format!("  --url \"{base_url}{path}\""));
-    flags.extend(headers.iter().map(|h| format!("  {h}")));
-    flags.extend(required_query.iter().map(|q| format!("  {q}")));
-    flags.extend(optional_query.iter().map(|q| format!("  {q}")));
 
     let variables_block = if variables.is_empty() {
         String::new()
@@ -61,6 +59,39 @@ source "$(dirname "$0")/../../config.sh"
 {variables_block}
 {curl}"#
     )
+}
+
+fn build_query_string(required: &[serde_json::Value], optional: &[serde_json::Value]) -> String {
+    let mut query = String::new();
+
+    if required.is_empty() && optional.is_empty() {
+        query
+    } else {
+        for (i, p) in required.iter().enumerate() {
+            if i == 0 {
+                query.push('?')
+            }
+            if i > 0 {
+                query.push('&');
+            }
+            let name = p["name"].as_str().unwrap_or("");
+            if name.is_empty() {
+                continue;
+            }
+            query.push_str(&format!("{}=${}", name, &name.to_uppercase()));
+        }
+
+        for (i, p) in optional.iter().enumerate() {
+            let prefix = if query.is_empty() && i == 0 { "?" } else { "&" };
+            let name = p["name"].as_str().unwrap_or("");
+            if name.is_empty() {
+                continue;
+            }
+            let uc_name = name.to_uppercase();
+            query.push_str(&format!("${{{uc_name}:+{prefix}{name}=${uc_name}}}"));
+        }
+        query
+    }
 }
 
 fn parameters_to_flags(
@@ -82,11 +113,7 @@ fn parameters_to_variables(params: &[serde_json::Value]) -> Vec<String> {
         .iter()
         .map(|p| {
             let name = p["name"].as_str().unwrap_or("").to_uppercase();
-            if p["required"] == true {
-                format!("{name}=\"\"")
-            } else {
-                format!("# {name}=\"\"")
-            }
+            format!("{name}=\"\"")
         })
         .collect()
 }
@@ -220,7 +247,7 @@ curl --request GET \
     }
 
     #[test]
-    fn given_operation_with_query_parameter_when_generating_script_then_contains_query_parameters()
+    fn given_operation_with_query_parameters_when_generating_script_then_contains_query_parameters()
     {
         let operation = json!({
             "parameters": [
@@ -228,7 +255,13 @@ curl --request GET \
                     "name": "status",
                     "in": "query",
                     "required": true
+                },
+                {
+                    "name": "limit",
+                    "in": "query",
+                    "required": true
                 }
+
             ]
         });
         let script = generate_script("https://api.example.com", "/users", "get", &operation);
@@ -239,15 +272,15 @@ curl --request GET \
 source "$(dirname "$0")/../../config.sh"
 
 STATUS=""
+LIMIT=""
 
 curl --request GET \
-  --url "https://api.example.com/users" \
-  --data-urlencode "status=$STATUS""#
+  --url "https://api.example.com/users?status=$STATUS&limit=$LIMIT""#
         );
     }
 
     #[test]
-    fn given_operation_with_optional_query_parameters_when_generating_script_then_parameter_is_commented_out()
+    fn given_operation_with_required_and_optional_query_parameters_when_generating_script_then_query_parameters()
      {
         let operation = json!({
             "parameters": [
@@ -271,12 +304,36 @@ curl --request GET \
 source "$(dirname "$0")/../../config.sh"
 
 STATUS=""
-# LIMIT=""
+LIMIT=""
 
 curl --request GET \
-  --url "https://api.example.com/users" \
-  --data-urlencode "status=$STATUS" \
-  # --data-urlencode "limit=$LIMIT""#
+  --url "https://api.example.com/users?status=$STATUS${LIMIT:+&limit=$LIMIT}""#
+        );
+    }
+
+    #[test]
+    fn given_operation_with_optional_query_parameters_when_generating_script_then_query_parameters()
+    {
+        let operation = json!({
+            "parameters": [
+                {
+                    "name": "limit",
+                    "in": "query",
+                    "required": false
+                }
+            ]
+        });
+        let script = generate_script("https://api.example.com", "/users", "get", &operation);
+
+        assert_eq!(
+            script,
+            r#"#!/bin/bash
+source "$(dirname "$0")/../../config.sh"
+
+LIMIT=""
+
+curl --request GET \
+  --url "https://api.example.com/users${LIMIT:+?limit=$LIMIT}""#
         );
     }
 
@@ -308,8 +365,7 @@ ID=""
 STATUS=""
 
 curl --request GET \
-  --url "https://api.example.com/users/$ID" \
-  --data-urlencode "status=$STATUS""#
+  --url "https://api.example.com/users/$ID?status=$STATUS""#
         );
     }
 }
