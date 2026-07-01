@@ -354,6 +354,7 @@ curl --request GET \
                 }
             ]
         });
+
         let script = generate_script("https://api.example.com", "/users/{id}", "get", &operation);
 
         assert_eq!(
@@ -366,6 +367,36 @@ STATUS=""
 
 curl --request GET \
   --url "https://api.example.com/users/$ID?status=$STATUS""#
+        );
+    }
+
+    #[test]
+    fn given_post_operation_with_no_request_body_when_generation_script_then_procudes_empty_request_body_variable()
+     {
+        let operation = json!({
+            "requestbody": {
+                "content": {
+                    "application/json": {
+                        "schema": {
+                            "type": "object"
+                        }
+                    }
+                }
+            }
+        });
+
+        let script = generate_script("https://api.example.com", "/items", "post", &operation);
+
+        assert_eq!(
+            script,
+            r#"#!/bin/bash
+source "$(dirname "$0")/../../config.sh"
+
+REQUEST_BODY="{}"
+
+curl --request POST \
+  --url "https://api.example.com/items" \
+  --data "$REQUEST_BODY""#
         );
     }
 }

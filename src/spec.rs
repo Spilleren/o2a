@@ -1,7 +1,5 @@
 use serde_json::Value;
 
-// use crate::parameter::Parameter;
-
 pub fn extract_default_server(spec: &Value) -> String {
     let url = spec["servers"]
         .as_array()
@@ -28,60 +26,6 @@ fn prefer_https(url: &str) -> String {
         url.to_string()
     }
 }
-// pub fn extract_parameters(operation: &Map<String, Value>) -> Vec<Parameter> {
-//     let mut parameters = Vec::new();
-//
-//     if let Some(params) = operation.get("parameters").and_then(|p| p.as_array()) {
-//         for param in params {
-//             if let Some(param_obj) = param.as_object() {
-//                 let name = param_obj
-//                     .get("name")
-//                     .and_then(|v| v.as_str())
-//                     .unwrap_or("")
-//                     .to_string();
-//
-//                 let location = param_obj
-//                     .get("in")
-//                     .and_then(|v| v.as_str())
-//                     .unwrap_or("")
-//                     .to_string();
-//
-//                 let required = param_obj
-//                     .get("required")
-//                     .and_then(|v| v.as_bool())
-//                     .unwrap_or(false);
-//
-//                 parameters.push(Parameter {
-//                     name,
-//                     location,
-//                     required,
-//                 });
-//             }
-//         }
-//     }
-//
-//     parameters
-// }
-//
-// pub fn has_request_body(operation: &Map<String, Value>) -> bool {
-//     operation.contains_key("requestBody")
-// }
-//
-// pub fn extract_security_schemes(operation: &Map<String, Value>) -> Vec<String> {
-//     let mut schemes = Vec::new();
-//
-//     if let Some(security) = operation.get("security").and_then(|s| s.as_array()) {
-//         for sec_entry in security {
-//             if let Some(sec_obj) = sec_entry.as_object() {
-//                 for (scheme_name, _) in sec_obj {
-//                     schemes.push(scheme_name.to_string());
-//                 }
-//             }
-//         }
-//     }
-//
-//     schemes
-// }
 
 #[cfg(test)]
 mod tests {
