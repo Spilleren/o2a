@@ -1,3 +1,4 @@
+mod config;
 mod path;
 mod script;
 mod spec;
@@ -30,9 +31,10 @@ fn main() {
 
         for (method, operation) in methods {
             let script = generate_script(&default_server, path, method, operation);
-            let file_path = format!("generated/{}/{}", method, method.to_lowercase());
+            let dir_path = format!("generated/{}", folder);
+            let file_path = format!("{}/{}", dir_path, method.to_lowercase());
 
-            fs::create_dir_all(format!("generated/{}", folder)).unwrap();
+            fs::create_dir_all(&dir_path).unwrap();
             fs::write(&file_path, script).unwrap();
             let mut perms = fs::metadata(&file_path).unwrap().permissions();
             perms.set_mode(0o755);
