@@ -1,16 +1,14 @@
 mod config;
+mod generator;
 mod path;
 mod script;
 mod spec;
 
 use std::env;
 use std::fs;
-use std::os::unix::fs::PermissionsExt;
 
-use spec::{extract_default_server, extract_paths, parse_spec};
-
-use path::path_to_folders;
-use script::generate_script;
+use generator::generate_files;
+use spec::parse_spec;
 
 fn main() {
     let args: Vec<String> = env::args().collect();
@@ -23,22 +21,6 @@ fn main() {
 
     let contents = fs::read_to_string(filename).expect("Failed to read OpenAPI file");
     let spec = parse_spec(&contents);
-    let default_server = extract_default_server(&spec);
-    let paths = extract_paths(&spec);
-    for (path, methods) in paths {
-        let methods = methods.as_object().unwrap();
-        let folder = path_to_folders(path);
 
-        for (method, operation) in methods {
-            let script = generate_script(&default_server, path, method, operation);
-            let dir_path = format!("generated/{}", folder);
-            let file_path = format!("{}/{}", dir_path, method.to_lowercase());
-
-            fs::create_dir_all(&dir_path).unwrap();
-            fs::write(&file_path, script).unwrap();
-            let mut perms = fs::metadata(&file_path).unwrap().permissions();
-            perms.set_mode(0o755);
-            fs::set_permissions(&file_path, fs::Permissions::from_mode(0o755)).unwrap();
-        }
-    }
+    generate_files(&spec, std::path::Path::new("generated")).unwrap();
 }

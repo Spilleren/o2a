@@ -1,17 +1,25 @@
+use crate::config::bash_variable_name;
+
 pub fn generate_script(
     base_url: &str,
     path: &str,
     method: &str,
     operation: &serde_json::Value,
+    config_path: &str,
+    security_headers: &[serde_json::Value],
 ) -> String {
     let uc_method = method.to_uppercase();
     let header_parameters = extract_parameters(operation, "header");
     let path_parameters = extract_parameters(operation, "path");
     let query_parameters = extract_parameters(operation, "query");
 
-    let headers = parameters_to_flags(&header_parameters, |name, var| {
+    let mut headers = parameters_to_flags(&header_parameters, |name, var| {
         format!("--header \"{name}: ${var}\"")
     });
+
+    headers.extend(parameters_to_flags(security_headers, |name, var| {
+        format!("--header \"{name}: ${var}\"")
+    }));
 
     let required_query_parameters = query_parameters
         .iter()
@@ -55,7 +63,7 @@ pub fn generate_script(
 
     format!(
         r#"#!/bin/bash
-source "$(dirname "$0")/../../config.sh"
+source "$(dirname "$0")/{config_path}"
 {variables_block}
 {curl}"#
     )
@@ -78,7 +86,7 @@ fn build_query_string(required: &[serde_json::Value], optional: &[serde_json::Va
             if name.is_empty() {
                 continue;
             }
-            query.push_str(&format!("{}=${}", name, &name.to_uppercase()));
+            query.push_str(&format!("{}=${}", name, bash_variable_name(name)));
         }
 
         for (i, p) in optional.iter().enumerate() {
@@ -87,7 +95,7 @@ fn build_query_string(required: &[serde_json::Value], optional: &[serde_json::Va
             if name.is_empty() {
                 continue;
             }
-            let uc_name = name.to_uppercase();
+            let uc_name = bash_variable_name(name);
             query.push_str(&format!("${{{uc_name}:+{prefix}{name}=${uc_name}}}"));
         }
         query
@@ -106,7 +114,7 @@ fn parameters_to_flags(
         .iter()
         .map(|p| {
             let name = p["name"].as_str().unwrap_or("");
-            let var = name.to_uppercase();
+            let var = bash_variable_name(name);
             format_fn(name, &var)
         })
         .collect()
@@ -116,8 +124,9 @@ fn parameters_to_variables(params: &[serde_json::Value]) -> Vec<String> {
     params
         .iter()
         .map(|p| {
-            let name = p["name"].as_str().unwrap_or("").to_uppercase();
-            format!("{name}=\"\"")
+            let name = p["name"].as_str().unwrap_or("");
+
+            format!("{}=\"\"", bash_variable_name(name))
         })
         .collect()
 }
@@ -126,7 +135,8 @@ fn replace_path_params(path: &str) -> String {
     path.split('/')
         .map(|segment| {
             if segment.starts_with('{') && segment.ends_with('}') {
-                format!("${}", &segment[1..segment.len() - 1].to_uppercase())
+                let name = &segment[1..segment.len() - 1];
+                format!("${}", bash_variable_name(name))
             } else {
                 segment.to_string()
             }
@@ -154,13 +164,19 @@ mod tests {
     fn given_get_operation_with_no_parameters_when_generating_script_then_produces_correct_curl_command()
      {
         let operation = json!({});
-
-        let script = generate_script("https://api.example.com", "/users", "get", &operation);
+        let script = generate_script(
+            "https://api.example.com",
+            "/users",
+            "get",
+            &operation,
+            "../config.sh",
+            &[],
+        );
 
         assert_eq!(
             script,
             r#"#!/bin/bash
-source "$(dirname "$0")/../../config.sh"
+source "$(dirname "$0")/../config.sh"
 
 curl --request GET \
   --url "https://api.example.com/users""#
@@ -172,14 +188,21 @@ curl --request GET \
         let operation = json!({
             "parameters": [
                 {
-                    "name": "Authorization",
+                    "name": "X-DB-Correlation-Id",
                     "in": "header",
                     "required": true
                 }
             ]
         });
 
-        let script = generate_script("https://api.example.com", "/users", "get", &operation);
+        let script = generate_script(
+            "https://api.example.com",
+            "/users",
+            "get",
+            &operation,
+            "../../config.sh",
+            &[],
+        );
 
         assert_eq!(
             script,
@@ -188,7 +211,7 @@ source "$(dirname "$0")/../../config.sh"
 
 curl --request GET \
   --url "https://api.example.com/users" \
-  --header "Authorization: $AUTHORIZATION""#
+  --header "X-DB-Correlation-Id: $X_DB_CORRELATION_ID""#
         );
     }
 
@@ -210,7 +233,14 @@ curl --request GET \
             ]
         });
 
-        let script = generate_script("https://api.example.com", "/users", "get", &operation);
+        let script = generate_script(
+            "https://api.example.com",
+            "/users",
+            "get",
+            &operation,
+            "../../config.sh",
+            &[],
+        );
 
         assert_eq!(
             script,
@@ -230,23 +260,30 @@ curl --request GET \
         let operation = json!({
             "parameters": [
                 {
-                    "name": "id",
+                    "name": "account-filter-id",
                     "in": "path",
                     "required": true
                 }
             ]
         });
-        let script = generate_script("https://api.example.com", "/users/{id}", "get", &operation);
+        let script = generate_script(
+            "https://api.example.com",
+            "/users/{account-filter-id}",
+            "get",
+            &operation,
+            "../../config.sh",
+            &[],
+        );
 
         assert_eq!(
             script,
             r#"#!/bin/bash
 source "$(dirname "$0")/../../config.sh"
 
-ID=""
+ACCOUNT_FILTER_ID=""
 
 curl --request GET \
-  --url "https://api.example.com/users/$ID""#
+  --url "https://api.example.com/users/$ACCOUNT_FILTER_ID""#
         );
     }
 
@@ -268,7 +305,14 @@ curl --request GET \
 
             ]
         });
-        let script = generate_script("https://api.example.com", "/users", "get", &operation);
+        let script = generate_script(
+            "https://api.example.com",
+            "/users",
+            "get",
+            &operation,
+            "../../config.sh",
+            &[],
+        );
 
         assert_eq!(
             script,
@@ -300,7 +344,14 @@ curl --request GET \
                 },
             ]
         });
-        let script = generate_script("https://api.example.com", "/users", "get", &operation);
+        let script = generate_script(
+            "https://api.example.com",
+            "/users",
+            "get",
+            &operation,
+            "../../config.sh",
+            &[],
+        );
 
         assert_eq!(
             script,
@@ -327,7 +378,14 @@ curl --request GET \
                 }
             ]
         });
-        let script = generate_script("https://api.example.com", "/users", "get", &operation);
+        let script = generate_script(
+            "https://api.example.com",
+            "/users",
+            "get",
+            &operation,
+            "../../config.sh",
+            &[],
+        );
 
         assert_eq!(
             script,
@@ -352,7 +410,14 @@ curl --request GET \
                 }
             ]
         });
-        let script = generate_script("https://api.example.com", "/users", "get", &operation);
+        let script = generate_script(
+            "https://api.example.com",
+            "/users",
+            "get",
+            &operation,
+            "../../config.sh",
+            &[],
+        );
 
         assert_eq!(
             script,
@@ -384,7 +449,14 @@ curl --request GET \
             ]
         });
 
-        let script = generate_script("https://api.example.com", "/users/{id}", "get", &operation);
+        let script = generate_script(
+            "https://api.example.com",
+            "/users/{id}",
+            "get",
+            &operation,
+            "../../config.sh",
+            &[],
+        );
 
         assert_eq!(
             script,
@@ -399,6 +471,34 @@ curl --request GET \
         );
     }
 
+    #[test]
+    fn given_security_scheme_header_when_generating_script_then_contains_security_header() {
+        let operation = json!({});
+
+        let security_headers = vec![json!({
+            "name": "X-IBM-Client-Id",
+            "in": "header"
+        })];
+
+        let script = generate_script(
+            "https://api.example.com",
+            "/users",
+            "get",
+            &operation,
+            "../.config.sh",
+            &security_headers,
+        );
+
+        assert_eq!(
+            script,
+            r#"#!/bin/bash
+source "$(dirname "$0")/../.config.sh"
+
+curl --request GET \
+  --url "https://api.example.com/users" \
+  --header "X-IBM-Client-Id: $X_IBM_CLIENT_ID""#
+        );
+    }
     //     #[test]
     //     fn given_post_operation_with_no_request_body_when_generation_script_then_procudes_empty_request_body_variable()
     //      {

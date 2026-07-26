@@ -14,6 +14,17 @@ pub fn path_to_folders(path: &str) -> String {
         .join("/")
 }
 
+pub fn relative_config_path(path: &str) -> String {
+    let depth = path
+        .split('/')
+        .filter(|segment| !segment.is_empty())
+        .count();
+
+    let mut parts = vec![".."; depth];
+    parts.push(".config.sh");
+    parts.join("/")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -34,5 +45,18 @@ mod tests {
             path_to_folders("/users/{id}/orders/{orderId}"),
             "users/_id/orders/_orderId"
         );
+    }
+
+    #[test]
+    fn given_single_segment_folder_when_building_config_path_then_goes_up_one_level() {
+        assert_eq!(relative_config_path("v1"), "../.config.sh");
+    }
+
+    #[test]
+    fn given_nested_folder_when_building_config_path_then_goes_up_to_generated_root() {
+        assert_eq!(
+            relative_config_path("v1/accounts/_accountId"),
+            "../../../.config.sh"
+        )
     }
 }

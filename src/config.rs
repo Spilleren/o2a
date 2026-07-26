@@ -10,6 +10,9 @@ pub fn generate_config(spec: &serde_json::Value) -> String {
             }
         }
     }
+
+    collect_header_security_schemes(spec, &mut variables);
+
     let mut lines = vec!["#!/bin/bash".to_string()];
     lines.extend(variables.into_iter().map(|name| format!("{name}=\"\"")));
     lines.push(String::new());
@@ -28,6 +31,25 @@ pub fn bash_variable_name(name: &str) -> String {
         .collect()
 }
 
+pub fn header_security_schemes(spec: &serde_json::Value) -> Vec<serde_json::Value> {
+    let Some(security_schemes) = spec["components"]["securitySchemes"].as_object() else {
+        return Vec::new();
+    };
+
+    security_schemes
+        .values()
+        .filter(|scheme| scheme["type"] == "apiKey" && scheme["in"] == "header")
+        .filter_map(|scheme| {
+            scheme["name"].as_str().map(|name| {
+                serde_json::json!({
+                    "name" : name,
+                    "in" : "header"
+                })
+            })
+        })
+        .collect()
+}
+
 fn collect_header_parameters(
     operation: &serde_json::Value,
     variables: &mut std::collections::BTreeSet<String>,
@@ -37,10 +59,20 @@ fn collect_header_parameters(
     };
 
     for parameter in parameters {
-        if parameter["in"] == "header" {
-            if let Some(name) = parameter["name"].as_str() {
-                variables.insert(bash_variable_name(name));
-            }
+        if parameter["in"] == "header"
+            && let Some(name) = parameter["name"].as_str()
+        {
+            variables.insert(bash_variable_name(name));
+        }
+    }
+}
+fn collect_header_security_schemes(
+    spec: &serde_json::Value,
+    variables: &mut std::collections::BTreeSet<String>,
+) {
+    for scheme in header_security_schemes(spec) {
+        if let Some(name) = scheme["name"].as_str() {
+            variables.insert(bash_variable_name(name));
         }
     }
 }
@@ -85,6 +117,35 @@ mod tests {
             r#"#!/bin/bash
 ACCEPT_LANGUAGE=""
 X_DB_CORRELATION_ID=""
+"#
+        );
+    }
+    #[test]
+    fn given_header_api_key_security_scheme_when_generating_config_then_contains_variable() {
+        let spec = serde_json::json!({
+            "components": {
+                "securitySchemes": {
+                    "clientIdHeader": {
+                        "type": "apiKey",
+                        "name": "X-IBM-Client-Id",
+                        "in": "header"
+                    },
+                    "ignoredQueryKey": {
+                        "type": "apiKey",
+                        "name": "api_key",
+                        "in": "query"
+                    }
+                }
+            },
+            "paths": {}
+        });
+
+        let config = generate_config(&spec);
+
+        assert_eq!(
+            config,
+            r#"#!/bin/bash
+X_IBM_CLIENT_ID=""
 "#
         );
     }
