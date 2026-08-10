@@ -1,5 +1,6 @@
 mod config;
 mod generator;
+mod openapi;
 mod path;
 mod script;
 mod spec;

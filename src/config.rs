@@ -1,16 +1,10 @@
+use crate::openapi::{header_security_schemes, spec_parameters, Parameter, ParameterLocation};
+
 pub fn generate_config(spec: &serde_json::Value) -> String {
     let mut variables = std::collections::BTreeSet::new();
 
-    if let Some(paths) = spec["paths"].as_object() {
-        for path_item in paths.values() {
-            if let Some(methods) = path_item.as_object() {
-                for operation in methods.values() {
-                    collect_header_parameters(operation, &mut variables);
-                }
-            }
-        }
-    }
-
+    let parameters = spec_parameters(spec, ParameterLocation::Header);
+    collect_header_parameters(&parameters, &mut variables);
     collect_header_security_schemes(spec, &mut variables);
 
     let mut lines = vec!["#!/bin/bash".to_string()];
@@ -31,55 +25,28 @@ pub fn bash_variable_name(name: &str) -> String {
         .collect()
 }
 
-pub fn header_security_schemes(spec: &serde_json::Value) -> Vec<serde_json::Value> {
-    let Some(security_schemes) = spec["components"]["securitySchemes"].as_object() else {
-        return Vec::new();
-    };
-
-    security_schemes
-        .values()
-        .filter(|scheme| scheme["type"] == "apiKey" && scheme["in"] == "header")
-        .filter_map(|scheme| {
-            scheme["name"].as_str().map(|name| {
-                serde_json::json!({
-                    "name" : name,
-                    "in" : "header"
-                })
-            })
-        })
-        .collect()
-}
-
 fn collect_header_parameters(
-    operation: &serde_json::Value,
+    parameters: &[Parameter],
     variables: &mut std::collections::BTreeSet<String>,
 ) {
-    let Some(parameters) = operation["parameters"].as_array() else {
-        return;
-    };
-
     for parameter in parameters {
-        if parameter["in"] == "header"
-            && let Some(name) = parameter["name"].as_str()
-        {
-            variables.insert(bash_variable_name(name));
-        }
+        variables.insert(bash_variable_name(&parameter.name));
     }
 }
+
 fn collect_header_security_schemes(
     spec: &serde_json::Value,
     variables: &mut std::collections::BTreeSet<String>,
 ) {
     for scheme in header_security_schemes(spec) {
-        if let Some(name) = scheme["name"].as_str() {
-            variables.insert(bash_variable_name(name));
-        }
+        variables.insert(bash_variable_name(&scheme.name));
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pretty_assertions::assert_eq;
 
     #[test]
     fn given_name_with_hyphens_when_normalizing_then_uses_uppercase_underscores() {

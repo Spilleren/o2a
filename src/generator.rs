@@ -1,4 +1,5 @@
-use crate::config::{generate_config, header_security_schemes};
+use crate::config::generate_config;
+use crate::openapi::header_security_schemes;
 use crate::path::{path_to_folders, relative_config_path};
 use crate::script::generate_script;
 use crate::spec::{extract_default_server, extract_paths};

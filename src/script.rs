@@ -1,4 +1,5 @@
 use crate::config::bash_variable_name;
+use crate::openapi::{Parameter, ParameterLocation, operation_parameters};
 
 pub fn generate_script(
     base_url: &str,
@@ -6,12 +7,12 @@ pub fn generate_script(
     method: &str,
     operation: &serde_json::Value,
     config_path: &str,
-    security_headers: &[serde_json::Value],
+    security_headers: &[Parameter],
 ) -> String {
     let uc_method = method.to_uppercase();
-    let header_parameters = extract_parameters(operation, "header");
-    let path_parameters = extract_parameters(operation, "path");
-    let query_parameters = extract_parameters(operation, "query");
+    let header_parameters = operation_parameters(operation, ParameterLocation::Header);
+    let path_parameters = operation_parameters(operation, ParameterLocation::Path);
+    let query_parameters = operation_parameters(operation, ParameterLocation::Query);
 
     let mut headers = parameters_to_flags(&header_parameters, |name, var| {
         format!("--header \"{name}: ${var}\"")
@@ -23,13 +24,13 @@ pub fn generate_script(
 
     let required_query_parameters = query_parameters
         .iter()
-        .filter(|p| is_required(p))
+        .filter(|p| p.required)
         .cloned()
         .collect::<Vec<_>>();
 
     let optional_query_parameters = query_parameters
         .iter()
-        .filter(|p| !is_required(p))
+        .filter(|p| !p.required)
         .cloned()
         .collect::<Vec<_>>();
 
@@ -69,7 +70,7 @@ source "$(dirname "$0")/{config_path}"
     )
 }
 
-fn build_query_string(required: &[serde_json::Value], optional: &[serde_json::Value]) -> String {
+fn build_query_string(required: &[Parameter], optional: &[Parameter]) -> String {
     let mut query = String::new();
 
     if required.is_empty() && optional.is_empty() {
@@ -82,7 +83,7 @@ fn build_query_string(required: &[serde_json::Value], optional: &[serde_json::Va
             if i > 0 {
                 query.push('&');
             }
-            let name = p["name"].as_str().unwrap_or("");
+            let name = p.name.as_str();
             if name.is_empty() {
                 continue;
             }
@@ -91,7 +92,7 @@ fn build_query_string(required: &[serde_json::Value], optional: &[serde_json::Va
 
         for (i, p) in optional.iter().enumerate() {
             let prefix = if query.is_empty() && i == 0 { "?" } else { "&" };
-            let name = p["name"].as_str().unwrap_or("");
+            let name = p.name.as_str();
             if name.is_empty() {
                 continue;
             }
@@ -102,32 +103,24 @@ fn build_query_string(required: &[serde_json::Value], optional: &[serde_json::Va
     }
 }
 
-fn is_required(p: &serde_json::Value) -> bool {
-    p["required"].as_bool().unwrap_or(false)
-}
-
 fn parameters_to_flags(
-    params: &[serde_json::Value],
+    params: &[Parameter],
     format_fn: impl Fn(&str, &str) -> String,
 ) -> Vec<String> {
     params
         .iter()
         .map(|p| {
-            let name = p["name"].as_str().unwrap_or("");
+            let name = p.name.as_str();
             let var = bash_variable_name(name);
             format_fn(name, &var)
         })
         .collect()
 }
 
-fn parameters_to_variables(params: &[serde_json::Value]) -> Vec<String> {
+fn parameters_to_variables(params: &[Parameter]) -> Vec<String> {
     params
         .iter()
-        .map(|p| {
-            let name = p["name"].as_str().unwrap_or("");
-
-            format!("{}=\"\"", bash_variable_name(name))
-        })
+        .map(|p| format!("{}=\"\"", bash_variable_name(p.name.as_str())))
         .collect()
 }
 
@@ -143,15 +136,6 @@ fn replace_path_params(path: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("/")
-}
-fn extract_parameters(operation: &serde_json::Value, in_value: &str) -> Vec<serde_json::Value> {
-    operation["parameters"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|p| p["in"] == in_value)
-        .collect()
 }
 
 #[cfg(test)]
@@ -475,10 +459,11 @@ curl --request GET \
     fn given_security_scheme_header_when_generating_script_then_contains_security_header() {
         let operation = json!({});
 
-        let security_headers = vec![json!({
-            "name": "X-IBM-Client-Id",
-            "in": "header"
-        })];
+        let security_headers = vec![Parameter {
+            name: String::from("X-IBM-Client-Id"),
+            location: ParameterLocation::Header,
+            required: true,
+        }];
 
         let script = generate_script(
             "https://api.example.com",
