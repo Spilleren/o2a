@@ -113,9 +113,13 @@ ACCEPT_LANGUAGE=""
             r#"#!/bin/bash
 source "$(dirname "$0")/../../.config.sh"
 
-curl --request GET \
-  --url "https://api.example.com/v1/users" \
-  --header "Accept-Language: $ACCEPT_LANGUAGE""#
+args=(
+  --request GET
+  --url "https://api.example.com/v1/users"
+  --header "Accept-Language: $ACCEPT_LANGUAGE"
+)
+
+curl "${args[@]}""#
         );
 
         std::fs::remove_dir_all(output_dir).unwrap();
@@ -153,8 +157,12 @@ source "$(dirname "$0")/../../../.config.sh"
 
 USER_ID=""
 
-curl --request GET \
-  --url "https://api.example.com/v1/users/$USER_ID""#
+args=(
+  --request GET
+  --url "https://api.example.com/v1/users/$USER_ID"
+)
+
+curl "${args[@]}""#
         );
 
         std::fs::remove_dir_all(output_dir).unwrap();

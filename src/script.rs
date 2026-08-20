@@ -22,85 +22,70 @@ pub fn generate_script(
         format!("--header \"{name}: ${var}\"")
     }));
 
-    let required_query_parameters = query_parameters
-        .iter()
-        .filter(|p| p.required)
-        .cloned()
-        .collect::<Vec<_>>();
-
-    let optional_query_parameters = query_parameters
-        .iter()
-        .filter(|p| !p.required)
-        .cloned()
-        .collect::<Vec<_>>();
-
     let path = replace_path_params(path);
-    let mut url = format!("{base_url}{path}");
+    let url = format!("{base_url}{path}");
 
-    let query = build_query_string(&required_query_parameters, &optional_query_parameters);
+    let mut args: Vec<String> = vec![
+        format!("  --request {uc_method}"),
+        format!("  --url \"{url}\""),
+    ];
+    args.extend(headers.iter().map(|h| format!("  {h}")));
 
-    if !query.is_empty() {
-        url.push_str(&query);
+    let query_lines = parameters_to_query_lines(&query_parameters);
+    let guards = parameters_to_guards(&query_parameters);
+
+    let script_parameters: Vec<Parameter> =
+        path_parameters.into_iter().chain(query_parameters).collect();
+
+    let variables = parameters_to_variables(&script_parameters);
+
+    let mut blocks: Vec<String> = Vec::new();
+    if !variables.is_empty() {
+        blocks.push(variables.join("\n"));
     }
+    if !guards.is_empty() {
+        blocks.push(guards.join("\n"));
+    }
+    blocks.push(format!("args=(\n{}\n)", args.join("\n")));
+    if !query_lines.is_empty() {
+        blocks.push(query_lines.join("\n"));
+    }
+    blocks.push("curl \"${args[@]}\"".to_string());
 
-    let mut flags: Vec<String> = Vec::new();
-    flags.push(format!("  --url \"{url}\""));
-    flags.extend(headers.iter().map(|h| format!("  {h}")));
-
-    let variables = parameters_to_variables(
-        &path_parameters
-            .into_iter()
-            .chain(required_query_parameters)
-            .chain(optional_query_parameters)
-            .collect::<Vec<_>>(),
-    );
-
-    let variables_block = if variables.is_empty() {
-        String::new()
-    } else {
-        format!("\n{}\n", variables.join("\n"))
-    };
-    let curl = format!("curl --request {uc_method} \\\n{}", flags.join(" \\\n"));
+    let body = blocks.join("\n\n");
 
     format!(
         r#"#!/bin/bash
 source "$(dirname "$0")/{config_path}"
-{variables_block}
-{curl}"#
+
+{body}"#
     )
 }
 
-fn build_query_string(required: &[Parameter], optional: &[Parameter]) -> String {
-    let mut query = String::new();
-
-    if required.is_empty() && optional.is_empty() {
-        query
-    } else {
-        for (i, p) in required.iter().enumerate() {
-            if i == 0 {
-                query.push('?')
-            }
-            if i > 0 {
-                query.push('&');
-            }
+fn parameters_to_query_lines(params: &[Parameter]) -> Vec<String> {
+    params
+        .iter()
+        .map(|p| {
             let name = p.name.as_str();
-            if name.is_empty() {
-                continue;
+            let var = bash_variable_name(name);
+            if p.required {
+                format!("args+=(--url-query \"{name}=${var}\")")
+            } else {
+                format!("[[ -n \"${var}\" ]] && args+=(--url-query \"{name}=${var}\")")
             }
-            query.push_str(&format!("{}=${}", name, bash_variable_name(name)));
-        }
+        })
+        .collect()
+}
 
-        for (i, p) in optional.iter().enumerate() {
-            let prefix = if query.is_empty() && i == 0 { "?" } else { "&" };
-            let name = p.name.as_str();
-            if name.is_empty() {
-                continue;
-            }
-            let uc_name = bash_variable_name(name);
-            query.push_str(&format!("${{{uc_name}:+{prefix}{name}=${uc_name}}}"));
-        }
-        query
-    }
+fn parameters_to_guards(params: &[Parameter]) -> Vec<String> {
+    params
+        .iter()
+        .filter(|p| p.required)
+        .map(|p| {
+            let var = bash_variable_name(p.name.as_str());
+            format!(": \"${{{var}:?{var} is required}}\"")
+        })
+        .collect()
 }
 
 fn parameters_to_flags(
@@ -162,8 +147,12 @@ mod tests {
             r#"#!/bin/bash
 source "$(dirname "$0")/../config.sh"
 
-curl --request GET \
-  --url "https://api.example.com/users""#
+args=(
+  --request GET
+  --url "https://api.example.com/users"
+)
+
+curl "${args[@]}""#
         );
     }
 
@@ -193,9 +182,13 @@ curl --request GET \
             r#"#!/bin/bash
 source "$(dirname "$0")/../../config.sh"
 
-curl --request GET \
-  --url "https://api.example.com/users" \
-  --header "X-DB-Correlation-Id: $X_DB_CORRELATION_ID""#
+args=(
+  --request GET
+  --url "https://api.example.com/users"
+  --header "X-DB-Correlation-Id: $X_DB_CORRELATION_ID"
+)
+
+curl "${args[@]}""#
         );
     }
 
@@ -231,10 +224,14 @@ curl --request GET \
             r#"#!/bin/bash
 source "$(dirname "$0")/../../config.sh"
 
-curl --request GET \
-  --url "https://api.example.com/users" \
-  --header "Authorization: $AUTHORIZATION" \
-  --header "AcceptLanguage: $ACCEPTLANGUAGE""#
+args=(
+  --request GET
+  --url "https://api.example.com/users"
+  --header "Authorization: $AUTHORIZATION"
+  --header "AcceptLanguage: $ACCEPTLANGUAGE"
+)
+
+curl "${args[@]}""#
         );
     }
 
@@ -266,8 +263,12 @@ source "$(dirname "$0")/../../config.sh"
 
 ACCOUNT_FILTER_ID=""
 
-curl --request GET \
-  --url "https://api.example.com/users/$ACCOUNT_FILTER_ID""#
+args=(
+  --request GET
+  --url "https://api.example.com/users/$ACCOUNT_FILTER_ID"
+)
+
+curl "${args[@]}""#
         );
     }
 
@@ -306,8 +307,18 @@ source "$(dirname "$0")/../../config.sh"
 STATUS=""
 LIMIT=""
 
-curl --request GET \
-  --url "https://api.example.com/users?status=$STATUS&limit=$LIMIT""#
+: "${STATUS:?STATUS is required}"
+: "${LIMIT:?LIMIT is required}"
+
+args=(
+  --request GET
+  --url "https://api.example.com/users"
+)
+
+args+=(--url-query "status=$STATUS")
+args+=(--url-query "limit=$LIMIT")
+
+curl "${args[@]}""#
         );
     }
 
@@ -345,8 +356,17 @@ source "$(dirname "$0")/../../config.sh"
 STATUS=""
 LIMIT=""
 
-curl --request GET \
-  --url "https://api.example.com/users?status=$STATUS${LIMIT:+&limit=$LIMIT}""#
+: "${STATUS:?STATUS is required}"
+
+args=(
+  --request GET
+  --url "https://api.example.com/users"
+)
+
+args+=(--url-query "status=$STATUS")
+[[ -n "$LIMIT" ]] && args+=(--url-query "limit=$LIMIT")
+
+curl "${args[@]}""#
         );
     }
 
@@ -378,8 +398,14 @@ source "$(dirname "$0")/../../config.sh"
 
 LIMIT=""
 
-curl --request GET \
-  --url "https://api.example.com/users${LIMIT:+?limit=$LIMIT}""#
+args=(
+  --request GET
+  --url "https://api.example.com/users"
+)
+
+[[ -n "$LIMIT" ]] && args+=(--url-query "limit=$LIMIT")
+
+curl "${args[@]}""#
         );
     }
 
@@ -410,8 +436,14 @@ source "$(dirname "$0")/../../config.sh"
 
 LIMIT=""
 
-curl --request GET \
-  --url "https://api.example.com/users${LIMIT:+?limit=$LIMIT}""#
+args=(
+  --request GET
+  --url "https://api.example.com/users"
+)
+
+[[ -n "$LIMIT" ]] && args+=(--url-query "limit=$LIMIT")
+
+curl "${args[@]}""#
         );
     }
 
@@ -450,8 +482,16 @@ source "$(dirname "$0")/../../config.sh"
 ID=""
 STATUS=""
 
-curl --request GET \
-  --url "https://api.example.com/users/$ID?status=$STATUS""#
+: "${STATUS:?STATUS is required}"
+
+args=(
+  --request GET
+  --url "https://api.example.com/users/$ID"
+)
+
+args+=(--url-query "status=$STATUS")
+
+curl "${args[@]}""#
         );
     }
 
@@ -479,9 +519,13 @@ curl --request GET \
             r#"#!/bin/bash
 source "$(dirname "$0")/../.config.sh"
 
-curl --request GET \
-  --url "https://api.example.com/users" \
-  --header "X-IBM-Client-Id: $X_IBM_CLIENT_ID""#
+args=(
+  --request GET
+  --url "https://api.example.com/users"
+  --header "X-IBM-Client-Id: $X_IBM_CLIENT_ID"
+)
+
+curl "${args[@]}""#
         );
     }
     //     #[test]
