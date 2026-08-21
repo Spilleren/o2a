@@ -2,7 +2,7 @@ use crate::config::generate_config;
 use crate::openapi::header_security_schemes;
 use crate::path::{path_to_folders, relative_config_path};
 use crate::script::generate_script;
-use crate::spec::{extract_default_server, extract_paths};
+use crate::spec::extract_paths;
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
@@ -11,7 +11,6 @@ pub fn generate_files(
     spec: &serde_json::Value,
     output_dir: &std::path::Path,
 ) -> std::io::Result<()> {
-    let default_server = extract_default_server(spec);
     let paths = extract_paths(spec);
     let security_headers = header_security_schemes(spec);
 
@@ -24,7 +23,6 @@ pub fn generate_files(
 
         for (method, operation) in methods {
             let script = generate_script(
-                &default_server,
                 path,
                 method,
                 operation,
@@ -93,6 +91,7 @@ mod tests {
         assert_eq!(
             config,
             r#"#!/bin/bash
+BASE_URL="https://api.example.com"
 ACCEPT_LANGUAGE=""
 "#
         );
@@ -115,7 +114,7 @@ source "$(dirname "$0")/../../.config.sh"
 
 args=(
   --request GET
-  --url "https://api.example.com/v1/users"
+  --url "$BASE_URL/v1/users"
   --header "Accept-Language: $ACCEPT_LANGUAGE"
 )
 
@@ -159,7 +158,7 @@ USER_ID=""
 
 args=(
   --request GET
-  --url "https://api.example.com/v1/users/$USER_ID"
+  --url "$BASE_URL/v1/users/$USER_ID"
 )
 
 curl "${args[@]}""#

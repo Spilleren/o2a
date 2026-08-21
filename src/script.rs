@@ -2,7 +2,6 @@ use crate::config::bash_variable_name;
 use crate::openapi::{Parameter, ParameterLocation, operation_parameters};
 
 pub fn generate_script(
-    base_url: &str,
     path: &str,
     method: &str,
     operation: &serde_json::Value,
@@ -23,7 +22,7 @@ pub fn generate_script(
     }));
 
     let path = replace_path_params(path);
-    let url = format!("{base_url}{path}");
+    let url = format!("$BASE_URL{path}");
 
     let mut args: Vec<String> = vec![
         format!("  --request {uc_method}"),
@@ -34,8 +33,10 @@ pub fn generate_script(
     let query_lines = parameters_to_query_lines(&query_parameters);
     let guards = parameters_to_guards(&query_parameters);
 
-    let script_parameters: Vec<Parameter> =
-        path_parameters.into_iter().chain(query_parameters).collect();
+    let script_parameters: Vec<Parameter> = path_parameters
+        .into_iter()
+        .chain(query_parameters)
+        .collect();
 
     let variables = parameters_to_variables(&script_parameters);
 
@@ -133,14 +134,7 @@ mod tests {
     fn given_get_operation_with_no_parameters_when_generating_script_then_produces_correct_curl_command()
      {
         let operation = json!({});
-        let script = generate_script(
-            "https://api.example.com",
-            "/users",
-            "get",
-            &operation,
-            "../config.sh",
-            &[],
-        );
+        let script = generate_script("/users", "get", &operation, "../config.sh", &[]);
 
         assert_eq!(
             script,
@@ -149,7 +143,7 @@ source "$(dirname "$0")/../config.sh"
 
 args=(
   --request GET
-  --url "https://api.example.com/users"
+  --url "$BASE_URL/users"
 )
 
 curl "${args[@]}""#
@@ -167,15 +161,7 @@ curl "${args[@]}""#
                 }
             ]
         });
-
-        let script = generate_script(
-            "https://api.example.com",
-            "/users",
-            "get",
-            &operation,
-            "../../config.sh",
-            &[],
-        );
+        let script = generate_script("/users", "get", &operation, "../../config.sh", &[]);
 
         assert_eq!(
             script,
@@ -184,7 +170,7 @@ source "$(dirname "$0")/../../config.sh"
 
 args=(
   --request GET
-  --url "https://api.example.com/users"
+  --url "$BASE_URL/users"
   --header "X-DB-Correlation-Id: $X_DB_CORRELATION_ID"
 )
 
@@ -209,15 +195,7 @@ curl "${args[@]}""#
                 }
             ]
         });
-
-        let script = generate_script(
-            "https://api.example.com",
-            "/users",
-            "get",
-            &operation,
-            "../../config.sh",
-            &[],
-        );
+        let script = generate_script("/users", "get", &operation, "../../config.sh", &[]);
 
         assert_eq!(
             script,
@@ -226,7 +204,7 @@ source "$(dirname "$0")/../../config.sh"
 
 args=(
   --request GET
-  --url "https://api.example.com/users"
+  --url "$BASE_URL/users"
   --header "Authorization: $AUTHORIZATION"
   --header "AcceptLanguage: $ACCEPTLANGUAGE"
 )
@@ -248,7 +226,6 @@ curl "${args[@]}""#
             ]
         });
         let script = generate_script(
-            "https://api.example.com",
             "/users/{account-filter-id}",
             "get",
             &operation,
@@ -265,7 +242,7 @@ ACCOUNT_FILTER_ID=""
 
 args=(
   --request GET
-  --url "https://api.example.com/users/$ACCOUNT_FILTER_ID"
+  --url "$BASE_URL/users/$ACCOUNT_FILTER_ID"
 )
 
 curl "${args[@]}""#
@@ -290,14 +267,7 @@ curl "${args[@]}""#
 
             ]
         });
-        let script = generate_script(
-            "https://api.example.com",
-            "/users",
-            "get",
-            &operation,
-            "../../config.sh",
-            &[],
-        );
+        let script = generate_script("/users", "get", &operation, "../../config.sh", &[]);
 
         assert_eq!(
             script,
@@ -312,7 +282,7 @@ LIMIT=""
 
 args=(
   --request GET
-  --url "https://api.example.com/users"
+  --url "$BASE_URL/users"
 )
 
 args+=(--url-query "status=$STATUS")
@@ -339,14 +309,7 @@ curl "${args[@]}""#
                 },
             ]
         });
-        let script = generate_script(
-            "https://api.example.com",
-            "/users",
-            "get",
-            &operation,
-            "../../config.sh",
-            &[],
-        );
+        let script = generate_script("/users", "get", &operation, "../../config.sh", &[]);
 
         assert_eq!(
             script,
@@ -360,7 +323,7 @@ LIMIT=""
 
 args=(
   --request GET
-  --url "https://api.example.com/users"
+  --url "$BASE_URL/users"
 )
 
 args+=(--url-query "status=$STATUS")
@@ -382,14 +345,7 @@ curl "${args[@]}""#
                 }
             ]
         });
-        let script = generate_script(
-            "https://api.example.com",
-            "/users",
-            "get",
-            &operation,
-            "../../config.sh",
-            &[],
-        );
+        let script = generate_script("/users", "get", &operation, "../../config.sh", &[]);
 
         assert_eq!(
             script,
@@ -400,7 +356,7 @@ LIMIT=""
 
 args=(
   --request GET
-  --url "https://api.example.com/users"
+  --url "$BASE_URL/users"
 )
 
 [[ -n "$LIMIT" ]] && args+=(--url-query "limit=$LIMIT")
@@ -420,14 +376,7 @@ curl "${args[@]}""#
                 }
             ]
         });
-        let script = generate_script(
-            "https://api.example.com",
-            "/users",
-            "get",
-            &operation,
-            "../../config.sh",
-            &[],
-        );
+        let script = generate_script("/users", "get", &operation, "../../config.sh", &[]);
 
         assert_eq!(
             script,
@@ -438,7 +387,7 @@ LIMIT=""
 
 args=(
   --request GET
-  --url "https://api.example.com/users"
+  --url "$BASE_URL/users"
 )
 
 [[ -n "$LIMIT" ]] && args+=(--url-query "limit=$LIMIT")
@@ -464,15 +413,7 @@ curl "${args[@]}""#
                 }
             ]
         });
-
-        let script = generate_script(
-            "https://api.example.com",
-            "/users/{id}",
-            "get",
-            &operation,
-            "../../config.sh",
-            &[],
-        );
+        let script = generate_script("/users/{id}", "get", &operation, "../../config.sh", &[]);
 
         assert_eq!(
             script,
@@ -486,7 +427,7 @@ STATUS=""
 
 args=(
   --request GET
-  --url "https://api.example.com/users/$ID"
+  --url "$BASE_URL/users/$ID"
 )
 
 args+=(--url-query "status=$STATUS")
@@ -504,9 +445,7 @@ curl "${args[@]}""#
             location: ParameterLocation::Header,
             required: true,
         }];
-
         let script = generate_script(
-            "https://api.example.com",
             "/users",
             "get",
             &operation,
@@ -521,7 +460,7 @@ source "$(dirname "$0")/../.config.sh"
 
 args=(
   --request GET
-  --url "https://api.example.com/users"
+  --url "$BASE_URL/users"
   --header "X-IBM-Client-Id: $X_IBM_CLIENT_ID"
 )
 
