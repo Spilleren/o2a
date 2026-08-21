@@ -1,4 +1,5 @@
-use crate::openapi::{header_security_schemes, spec_parameters, Parameter, ParameterLocation};
+use crate::openapi::{Parameter, ParameterLocation, header_security_schemes, spec_parameters};
+use crate::spec::extract_default_server;
 
 pub fn generate_config(spec: &serde_json::Value) -> String {
     let mut variables = std::collections::BTreeSet::new();
@@ -8,6 +9,7 @@ pub fn generate_config(spec: &serde_json::Value) -> String {
     collect_header_security_schemes(spec, &mut variables);
 
     let mut lines = vec!["#!/bin/bash".to_string()];
+    lines.push(format!("BASE_URL=\"{}\"", extract_default_server(spec)));
     lines.extend(variables.into_iter().map(|name| format!("{name}=\"\"")));
     lines.push(String::new());
     lines.join("\n")
@@ -62,6 +64,25 @@ mod tests {
     }
 
     #[test]
+    fn given_server_when_generating_config_then_contains_base_url() {
+        let spec = serde_json::json!({
+            "servers": [
+                { "url": "https://api.example.com" }
+            ],
+            "paths": {}
+        });
+
+        let config = generate_config(&spec);
+
+        assert_eq!(
+            config,
+            r#"#!/bin/bash
+BASE_URL="https://api.example.com"
+"#
+        );
+    }
+
+    #[test]
     fn given_operation_header_parameters_when_generating_config_then_contains_empty_variables() {
         let spec = serde_json::json!({
             "paths": {
@@ -82,6 +103,7 @@ mod tests {
         assert_eq!(
             config,
             r#"#!/bin/bash
+BASE_URL="https://localhost"
 ACCEPT_LANGUAGE=""
 X_DB_CORRELATION_ID=""
 "#
@@ -112,6 +134,7 @@ X_DB_CORRELATION_ID=""
         assert_eq!(
             config,
             r#"#!/bin/bash
+BASE_URL="https://localhost"
 X_IBM_CLIENT_ID=""
 "#
         );

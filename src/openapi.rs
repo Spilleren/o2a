@@ -34,10 +34,7 @@ pub enum SecuritySchemeType {
     ApiKey,
 }
 
-pub fn spec_parameters(
-    spec: &serde_json::Value,
-    location: ParameterLocation,
-) -> Vec<Parameter> {
+pub fn spec_parameters(spec: &serde_json::Value, location: ParameterLocation) -> Vec<Parameter> {
     let Some(paths) = spec["paths"].as_object() else {
         return Vec::new();
     };
