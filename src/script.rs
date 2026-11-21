@@ -1,10 +1,11 @@
 use crate::config::bash_variable_name;
 use crate::openapi::{Parameter, ParameterLocation, operation_parameters};
+use crate::spec::Operation;
 
 pub fn generate_script(
     path: &str,
     method: &str,
-    operation: &serde_json::Value,
+    operation: &Operation,
     config_path: &str,
     security_headers: &[Parameter],
 ) -> String {
@@ -126,14 +127,15 @@ fn replace_path_params(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use crate::openapi::ParameterLocation::{Header, Path, Query};
+
     use super::*;
     use pretty_assertions::assert_eq;
-    use serde_json::json;
 
     #[test]
     fn given_get_operation_with_no_parameters_when_generating_script_then_produces_correct_curl_command()
      {
-        let operation = json!({});
+        let operation = Operation { parameters: vec![] };
         let script = generate_script("/users", "get", &operation, "../config.sh", &[]);
 
         assert_eq!(
@@ -152,15 +154,14 @@ curl "${args[@]}""#
 
     #[test]
     fn given_operation_with_header_parameter_when_generating_script_then_contains_header() {
-        let operation = json!({
-            "parameters": [
-                {
-                    "name": "X-DB-Correlation-Id",
-                    "in": "header",
-                    "required": true
-                }
-            ]
-        });
+        let operation = Operation {
+            parameters: vec![Parameter {
+                name: "X-DB-Correlation-Id".to_owned(),
+                location: Header,
+                required: true,
+            }],
+        };
+
         let script = generate_script("/users", "get", &operation, "../../config.sh", &[]);
 
         assert_eq!(
@@ -181,20 +182,21 @@ curl "${args[@]}""#
     #[test]
     fn given_operation_with_multiple_header_parameter_when_generating_script_then_contains_header()
     {
-        let operation = json!({
-            "parameters": [
-                {
-                    "name": "Authorization",
-                    "in": "header",
-                    "required": true
+        let operation = Operation {
+            parameters: vec![
+                Parameter {
+                    name: "Authorization".to_owned(),
+                    location: Header,
+                    required: true,
                 },
-                {
-                    "name": "AcceptLanguage",
-                    "in": "header",
-                    "required": true
-                }
-            ]
-        });
+                Parameter {
+                    name: "AcceptLanguage".to_owned(),
+                    location: Header,
+                    required: true,
+                },
+            ],
+        };
+
         let script = generate_script("/users", "get", &operation, "../../config.sh", &[]);
 
         assert_eq!(
@@ -216,15 +218,14 @@ curl "${args[@]}""#
     #[test]
     fn given_operation_with_path_parameter_when_generating_script_then_url_contains_shell_variable()
     {
-        let operation = json!({
-            "parameters": [
-                {
-                    "name": "account-filter-id",
-                    "in": "path",
-                    "required": true
-                }
-            ]
-        });
+        let operation = Operation {
+            parameters: vec![Parameter {
+                name: "account-filter-id".to_owned(),
+                location: Path,
+                required: true,
+            }],
+        };
+
         let script = generate_script(
             "/users/{account-filter-id}",
             "get",
@@ -252,21 +253,20 @@ curl "${args[@]}""#
     #[test]
     fn given_operation_with_query_parameters_when_generating_script_then_contains_query_parameters()
     {
-        let operation = json!({
-            "parameters": [
-                {
-                    "name": "status",
-                    "in": "query",
-                    "required": true
+        let operation = Operation {
+            parameters: vec![
+                Parameter {
+                    name: "status".to_owned(),
+                    location: Query,
+                    required: true,
                 },
-                {
-                    "name": "limit",
-                    "in": "query",
-                    "required": true
-                }
-
-            ]
-        });
+                Parameter {
+                    name: "limit".to_owned(),
+                    location: Query,
+                    required: true,
+                },
+            ],
+        };
         let script = generate_script("/users", "get", &operation, "../../config.sh", &[]);
 
         assert_eq!(
@@ -295,20 +295,21 @@ curl "${args[@]}""#
     #[test]
     fn given_operation_with_required_and_optional_query_parameters_when_generating_script_then_query_parameters()
      {
-        let operation = json!({
-            "parameters": [
-                {
-                    "name": "status",
-                    "in": "query",
-                    "required": true
+        let operation = Operation {
+            parameters: vec![
+                Parameter {
+                    name: "status".to_owned(),
+                    location: Query,
+                    required: true,
                 },
-                {
-                    "name": "limit",
-                    "in": "query",
-                    "required": false
+                Parameter {
+                    name: "limit".to_owned(),
+                    location: Query,
+                    required: false,
                 },
-            ]
-        });
+            ],
+        };
+
         let script = generate_script("/users", "get", &operation, "../../config.sh", &[]);
 
         assert_eq!(
@@ -336,15 +337,14 @@ curl "${args[@]}""#
     #[test]
     fn given_operation_with_optional_query_parameters_when_generating_script_then_query_parameters()
     {
-        let operation = json!({
-            "parameters": [
-                {
-                    "name": "limit",
-                    "in": "query",
-                    "required": false
-                }
-            ]
-        });
+        let operation = Operation {
+            parameters: vec![Parameter {
+                name: "limit".to_owned(),
+                location: Query,
+                required: false,
+            }],
+        };
+
         let script = generate_script("/users", "get", &operation, "../../config.sh", &[]);
 
         assert_eq!(
@@ -368,14 +368,14 @@ curl "${args[@]}""#
     #[test]
     fn given_operation_with_optional_query_parameters_with_no_required_field_when_generating_script_then_query_parameters()
      {
-        let operation = json!({
-            "parameters": [
-                {
-                    "name": "limit",
-                    "in": "query"
-                }
-            ]
-        });
+        let operation = Operation {
+            parameters: vec![Parameter {
+                name: "limit".to_owned(),
+                location: Query,
+                required: false,
+            }],
+        };
+
         let script = generate_script("/users", "get", &operation, "../../config.sh", &[]);
 
         assert_eq!(
@@ -399,20 +399,21 @@ curl "${args[@]}""#
     #[test]
     fn given_operation_with_query_and_path_parameters_when_generating_script_then_contains_query_parameters()
      {
-        let operation = json!({
-            "parameters": [
-                {
-                    "name": "status",
-                    "in": "query",
-                    "required": true
+        let operation = Operation {
+            parameters: vec![
+                Parameter {
+                    name: "status".to_owned(),
+                    location: Query,
+                    required: true,
                 },
-                {
-                    "name": "id",
-                    "in": "path",
-                    "required": true
-                }
-            ]
-        });
+                Parameter {
+                    name: "id".to_owned(),
+                    location: Path,
+                    required: true,
+                },
+            ],
+        };
+
         let script = generate_script("/users/{id}", "get", &operation, "../../config.sh", &[]);
 
         assert_eq!(
@@ -438,7 +439,7 @@ curl "${args[@]}""#
 
     #[test]
     fn given_security_scheme_header_when_generating_script_then_contains_security_header() {
-        let operation = json!({});
+        let operation = Operation { parameters: vec![] };
 
         let security_headers = vec![Parameter {
             name: String::from("X-IBM-Client-Id"),

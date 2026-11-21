@@ -2,15 +2,12 @@ use crate::config::generate_config;
 use crate::openapi::header_security_schemes;
 use crate::path::{path_to_folders, relative_config_path};
 use crate::script::generate_script;
-use crate::spec::extract_paths;
+use crate::spec::{Spec, extract_paths};
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
-pub fn generate_files(
-    spec: &serde_json::Value,
-    output_dir: &std::path::Path,
-) -> std::io::Result<()> {
+pub fn generate_files(spec: &Spec, output_dir: &std::path::Path) -> std::io::Result<()> {
     let paths = extract_paths(spec);
     let security_headers = header_security_schemes(spec);
 
@@ -18,7 +15,7 @@ pub fn generate_files(
     fs::write(output_dir.join(".config.sh"), generate_config(spec)).unwrap();
 
     for (path, methods) in paths {
-        let methods = methods.as_object().unwrap();
+        let methods = methods.operations();
         let folder = path_to_folders(path);
 
         for (method, operation) in methods {
@@ -45,9 +42,13 @@ pub fn generate_files(
 
 #[cfg(test)]
 mod tests {
+    use crate::openapi::Parameter;
+    use crate::openapi::ParameterLocation::{Header, Path};
+    use crate::spec::{Operation, PathItem, Server};
+
     use super::*;
     use pretty_assertions::assert_eq;
-    use serde_json::json;
+    use std::collections::BTreeMap;
     use std::path::PathBuf;
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -59,25 +60,27 @@ mod tests {
         std::env::temp_dir().join(format!("o2a-{test_name}-{unique}"))
     }
 
-    fn spec_with_users_get() -> serde_json::Value {
-        json!({
-            "servers": [
-                { "url": "https://api.example.com" }
-            ],
-            "paths": {
-                "/v1/users": {
-                    "get": {
-                        "parameters": [
-                            {
-                                "name": "Accept-Language",
-                                "in": "header",
-                                "required": true
-                            }
-                        ]
-                    }
-                }
-            }
-        })
+    fn spec_with_users_get() -> Spec {
+        Spec {
+            servers: vec![Server {
+                url: "https://api.example.com".to_owned(),
+            }],
+            paths: BTreeMap::from([(
+                "/v1/users".to_owned(),
+                PathItem {
+                    get: Some(Operation {
+                        parameters: vec![Parameter {
+                            name: "Accept-Language".to_owned(),
+                            location: Header,
+                            required: false,
+                        }],
+                    })
+                    .into(),
+                    ..Default::default()
+                },
+            )]),
+            components: serde_json::json!({}),
+        }
     }
 
     #[test]
@@ -126,24 +129,26 @@ curl "${args[@]}""#
 
     #[test]
     fn given_nested_path_when_generating_files_then_script_sources_config_from_generated_root() {
-        let spec = json!({
-            "servers": [
-                { "url": "https://api.example.com" }
-            ],
-            "paths": {
-                "/v1/users/{user-id}": {
-                    "get": {
-                        "parameters": [
-                            {
-                                "name": "user-id",
-                                "in": "path",
-                                "required": true
-                            }
-                        ]
-                    }
-                }
-            }
-        });
+        let spec = Spec {
+            servers: vec![Server {
+                url: "https://api.example.com".to_owned(),
+            }],
+            paths: BTreeMap::from([(
+                "/v1/users/{user-id}".to_owned(),
+                PathItem {
+                    get: Some(Operation {
+                        parameters: vec![Parameter {
+                            name: "user-id".to_owned(),
+                            location: Path,
+                            required: true,
+                        }],
+                    })
+                    .into(),
+                    ..Default::default()
+                },
+            )]),
+            components: serde_json::json!({}),
+        };
         let output_dir = test_output_dir("nested-source");
 
         generate_files(&spec, &output_dir).unwrap();
@@ -170,11 +175,18 @@ curl "${args[@]}""#
     #[test]
     fn given_header_security_scheme_when_generating_files_then_endpoint_script_contains_security_header()
      {
-        let spec = json!({
-            "servers": [
-                { "url": "https://api.example.com" }
-            ],
-            "components": {
+        let spec = Spec {
+            servers: vec![Server {
+                url: "https://api.example.com".to_owned(),
+            }],
+            paths: BTreeMap::from([(
+                "/v1/users".to_owned(),
+                PathItem {
+                    get: Some(Operation { parameters: vec![] }).into(),
+                    ..Default::default()
+                },
+            )]),
+            components: serde_json::json!({
                 "securitySchemes": {
                     "clientIdHeader": {
                         "type": "apiKey",
@@ -182,15 +194,9 @@ curl "${args[@]}""#
                         "in": "header"
                     }
                 }
-            },
-            "paths": {
-                "/v1/users": {
-                    "get": {
-                        "parameters": []
-                    }
-                }
-            }
-        });
+            }),
+        };
+
         let output_dir = test_output_dir("security-header");
 
         generate_files(&spec, &output_dir).unwrap();

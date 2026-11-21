@@ -1,7 +1,7 @@
 use crate::openapi::{Parameter, ParameterLocation, header_security_schemes, spec_parameters};
-use crate::spec::extract_default_server;
+use crate::spec::{Spec, extract_default_server};
 
-pub fn generate_config(spec: &serde_json::Value) -> String {
+pub fn generate_config(spec: &Spec) -> String {
     let mut variables = std::collections::BTreeSet::new();
 
     let parameters = spec_parameters(spec, ParameterLocation::Header);
@@ -37,7 +37,7 @@ fn collect_header_parameters(
 }
 
 fn collect_header_security_schemes(
-    spec: &serde_json::Value,
+    spec: &Spec,
     variables: &mut std::collections::BTreeSet<String>,
 ) {
     for scheme in header_security_schemes(spec) {
@@ -47,6 +47,13 @@ fn collect_header_security_schemes(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
+    use crate::{
+        openapi::ParameterLocation::Header,
+        spec::{Operation, PathItem, Server},
+    };
+
     use super::*;
     use pretty_assertions::assert_eq;
 
@@ -65,12 +72,13 @@ mod tests {
 
     #[test]
     fn given_server_when_generating_config_then_contains_base_url() {
-        let spec = serde_json::json!({
-            "servers": [
-                { "url": "https://api.example.com" }
-            ],
-            "paths": {}
-        });
+        let spec = Spec {
+            servers: vec![Server {
+                url: "https://api.example.com".to_owned(),
+            }],
+            paths: BTreeMap::new(),
+            components: serde_json::json!({}),
+        };
 
         let config = generate_config(&spec);
 
@@ -84,20 +92,30 @@ BASE_URL="https://api.example.com"
 
     #[test]
     fn given_operation_header_parameters_when_generating_config_then_contains_empty_variables() {
-        let spec = serde_json::json!({
-            "paths": {
-                "/v1/accounts": {
-                    "get": {
-                        "parameters": [
-                            { "name": "Accept-Language", "in": "header", "required": true},
-                            { "name": "X-DB-Correlation-Id", "in": "header", "required": true},
-
-                        ]
-                    }
-                }
-            }
-        });
-
+        let spec = Spec {
+            servers: vec![],
+            paths: BTreeMap::from([(
+                "/v1/accounts".to_owned(),
+                PathItem {
+                    get: Some(Operation {
+                        parameters: vec![
+                            Parameter {
+                                name: "Accept-Language".to_owned(),
+                                location: Header,
+                                required: false,
+                            },
+                            Parameter {
+                                name: "X-DB-Correlation-Id".to_owned(),
+                                location: Header,
+                                required: true,
+                            },
+                        ],
+                    }),
+                    ..Default::default()
+                },
+            )]),
+            components: serde_json::json!({}),
+        };
         let config = generate_config(&spec);
 
         assert_eq!(
@@ -111,8 +129,10 @@ X_DB_CORRELATION_ID=""
     }
     #[test]
     fn given_header_api_key_security_scheme_when_generating_config_then_contains_variable() {
-        let spec = serde_json::json!({
-            "components": {
+        let spec = Spec {
+            servers: vec![],
+            paths: BTreeMap::new(),
+            components: serde_json::json!({
                 "securitySchemes": {
                     "clientIdHeader": {
                         "type": "apiKey",
@@ -125,9 +145,8 @@ X_DB_CORRELATION_ID=""
                         "in": "query"
                     }
                 }
-            },
-            "paths": {}
-        });
+            }),
+        };
 
         let config = generate_config(&spec);
 

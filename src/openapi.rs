@@ -1,4 +1,6 @@
-#[derive(Debug, Clone, serde::Deserialize)]
+use crate::spec::{Operation, Spec};
+
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 pub struct Parameter {
     pub name: String,
 
@@ -34,34 +36,25 @@ pub enum SecuritySchemeType {
     ApiKey,
 }
 
-pub fn spec_parameters(spec: &serde_json::Value, location: ParameterLocation) -> Vec<Parameter> {
-    let Some(paths) = spec["paths"].as_object() else {
-        return Vec::new();
-    };
+pub fn spec_parameters(spec: &Spec, location: ParameterLocation) -> Vec<Parameter> {
+    let paths = spec.paths.values();
 
     paths
-        .values()
-        .filter_map(|path_item| path_item.as_object())
-        .flat_map(|methods| methods.values())
-        .flat_map(|operation| operation_parameters(operation, location.clone()))
+        .flat_map(|path_item| path_item.operations())
+        .flat_map(|(_, operation)| operation_parameters(operation, location.clone()))
         .collect()
 }
-pub fn operation_parameters(
-    operation: &serde_json::Value,
-    location: ParameterLocation,
-) -> Vec<Parameter> {
-    operation["parameters"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default()
-        .into_iter()
-        .filter_map(|value| serde_json::from_value::<Parameter>(value).ok())
+pub fn operation_parameters(operation: &Operation, location: ParameterLocation) -> Vec<Parameter> {
+    operation
+        .parameters
+        .iter()
         .filter(|parameter| parameter.location == location)
+        .cloned()
         .collect()
 }
 
-pub fn header_security_schemes(spec: &serde_json::Value) -> Vec<Parameter> {
-    let Some(security_schemes) = spec["components"]["securitySchemes"].as_object() else {
+pub fn header_security_schemes(spec: &Spec) -> Vec<Parameter> {
+    let Some(security_schemes) = spec.components["securitySchemes"].as_object() else {
         return Vec::new();
     };
 
@@ -79,36 +72,59 @@ pub fn header_security_schemes(spec: &serde_json::Value) -> Vec<Parameter> {
         })
         .collect()
 }
-#[test]
-fn given_spec_with_multiple_operations_when_extracting_header_parameters_then_returns_all_headers()
-{
-    let spec = serde_json::json!({
-        "paths": {
-            "/v1/users": {
-                "get": {
-                    "parameters": [
-                        { "name": "Accept-Language", "in": "header" },
-                        { "name": "limit", "in": "query" }
-                    ]
-                }
-            },
-            "/v1/accounts": {
-                "get": {
-                    "parameters": [
-                        { "name": "X-DB-Correlation-Id", "in": "header" }
-                    ]
-                }
-            }
-        }
-    });
 
-    let parameters = spec_parameters(&spec, ParameterLocation::Header);
+#[cfg(test)]
+mod tests {
+    use crate::openapi::ParameterLocation::Header;
+    use crate::spec::PathItem;
 
-    let mut names = parameters
-        .into_iter()
-        .map(|parameter| parameter.name)
-        .collect::<Vec<_>>();
-    names.sort();
+    use super::*;
+    use std::collections::BTreeMap;
 
-    assert_eq!(names, vec!["Accept-Language", "X-DB-Correlation-Id"]);
+    #[test]
+    fn given_spec_with_multiple_operations_when_extracting_header_parameters_then_returns_all_headers()
+     {
+        let accept_language_parameter = Parameter {
+            name: "Accept-Language".to_owned(),
+            location: Header,
+            required: false,
+        };
+        let correlation_parameter = Parameter {
+            name: "X-DB-Correlation-Id".to_owned(),
+            location: Header,
+            required: false,
+        };
+        let spec = Spec {
+            servers: Vec::new(),
+
+            paths: BTreeMap::from([
+                (
+                    "/v1/users".to_owned(),
+                    PathItem {
+                        get: Some(Operation {
+                            parameters: vec![accept_language_parameter.clone()],
+                        }),
+                        ..Default::default()
+                    },
+                ),
+                (
+                    "/v1/accounts".to_owned(),
+                    PathItem {
+                        get: Some(Operation {
+                            parameters: vec![correlation_parameter.clone()],
+                        }),
+                        ..Default::default()
+                    },
+                ),
+            ]),
+            components: serde_json::json!({}),
+        };
+
+        let parameters = spec_parameters(&spec, ParameterLocation::Header);
+
+        assert_eq!(
+            parameters.clone(),
+            vec![correlation_parameter, accept_language_parameter]
+        );
+    }
 }
