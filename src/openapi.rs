@@ -19,21 +19,23 @@ pub enum ParameterLocation {
     Path,
 }
 
-#[derive(Debug, Clone, serde::Deserialize)]
-pub struct SecurityScheme {
-    #[serde(rename = "type")]
-    pub scheme_type: SecuritySchemeType,
-
-    pub name: String,
-
-    #[serde(rename = "in")]
-    pub location: ParameterLocation,
-}
-
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub enum SecuritySchemeType {
-    ApiKey,
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum SecurityScheme {
+    ApiKey {
+        name: String,
+
+        #[serde(rename = "in")]
+        location: ParameterLocation,
+    },
+    Http {
+        scheme: String,
+    },
+    #[serde(rename = "oauth2")]
+    OAuth2,
+    OpenIdConnect {
+        open_id_connect_url: String,
+    },
 }
 
 pub fn spec_parameters(spec: &Spec, location: ParameterLocation) -> Vec<Parameter> {
@@ -54,21 +56,18 @@ pub fn operation_parameters(operation: &Operation, location: ParameterLocation) 
 }
 
 pub fn header_security_schemes(spec: &Spec) -> Vec<Parameter> {
-    let Some(security_schemes) = spec.components["securitySchemes"].as_object() else {
-        return Vec::new();
-    };
-
-    security_schemes
+    spec.components
+        .security_schemes
         .values()
-        .filter_map(|value| serde_json::from_value::<SecurityScheme>(value.clone()).ok())
-        .filter(|scheme| {
-            scheme.scheme_type == SecuritySchemeType::ApiKey
-                && scheme.location == ParameterLocation::Header
-        })
-        .map(|scheme| Parameter {
-            name: scheme.name,
-            location: scheme.location,
-            required: true,
+        .filter_map(|scheme| match scheme {
+            SecurityScheme::ApiKey { name, location } if *location == ParameterLocation::Header => {
+                Some(Parameter {
+                    name: name.clone(),
+                    location: location.clone(),
+                    required: true,
+                })
+            }
+            _ => None,
         })
         .collect()
 }
@@ -76,10 +75,37 @@ pub fn header_security_schemes(spec: &Spec) -> Vec<Parameter> {
 #[cfg(test)]
 mod tests {
     use crate::openapi::ParameterLocation::Header;
-    use crate::spec::PathItem;
+    use crate::spec::{Components, PathItem, parse_spec};
 
     use super::*;
     use std::collections::BTreeMap;
+
+    #[test]
+    fn given_mixed_security_schemes_when_extracting_headers_then_only_api_key_headers() {
+        let spec = parse_spec(
+            r#"{
+                "servers": [],
+                "paths": {},
+                "components": {
+                    "securitySchemes": {
+                        "petstore_auth": { "type": "oauth2", "flows": {} },
+                        "api_key": { "type": "apiKey", "name": "api_key", "in": "header" }
+                    }
+                }
+            }"#,
+        );
+
+        let headers = header_security_schemes(&spec);
+
+        assert_eq!(
+            headers,
+            vec![Parameter {
+                name: "api_key".to_owned(),
+                location: ParameterLocation::Header,
+                required: true,
+            }]
+        );
+    }
 
     #[test]
     fn given_spec_with_multiple_operations_when_extracting_header_parameters_then_returns_all_headers()
@@ -117,7 +143,7 @@ mod tests {
                     },
                 ),
             ]),
-            components: serde_json::json!({}),
+            components: Components::default(),
         };
 
         let parameters = spec_parameters(&spec, ParameterLocation::Header);

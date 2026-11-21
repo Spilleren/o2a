@@ -44,7 +44,8 @@ pub fn generate_files(spec: &Spec, output_dir: &std::path::Path) -> std::io::Res
 mod tests {
     use crate::openapi::Parameter;
     use crate::openapi::ParameterLocation::{Header, Path};
-    use crate::spec::{Operation, PathItem, Server};
+    use crate::openapi::SecurityScheme;
+    use crate::spec::{Components, Operation, PathItem, Server};
 
     use super::*;
     use pretty_assertions::assert_eq;
@@ -74,12 +75,11 @@ mod tests {
                             location: Header,
                             required: false,
                         }],
-                    })
-                    .into(),
+                    }),
                     ..Default::default()
                 },
             )]),
-            components: serde_json::json!({}),
+            components: Components::default(),
         }
     }
 
@@ -142,12 +142,11 @@ curl "${args[@]}""#
                             location: Path,
                             required: true,
                         }],
-                    })
-                    .into(),
+                    }),
                     ..Default::default()
                 },
             )]),
-            components: serde_json::json!({}),
+            components: Components::default(),
         };
         let output_dir = test_output_dir("nested-source");
 
@@ -182,19 +181,19 @@ curl "${args[@]}""#
             paths: BTreeMap::from([(
                 "/v1/users".to_owned(),
                 PathItem {
-                    get: Some(Operation { parameters: vec![] }).into(),
+                    get: Some(Operation { parameters: vec![] }),
                     ..Default::default()
                 },
             )]),
-            components: serde_json::json!({
-                "securitySchemes": {
-                    "clientIdHeader": {
-                        "type": "apiKey",
-                        "name": "X-IBM-Client-Id",
-                        "in": "header"
-                    }
-                }
-            }),
+            components: Components {
+                security_schemes: BTreeMap::from([(
+                    "clientIdHeader".to_owned(),
+                    SecurityScheme::ApiKey {
+                        name: "X-IBM-Client-Id".to_owned(),
+                        location: Header,
+                    },
+                )]),
+            },
         };
 
         let output_dir = test_output_dir("security-header");

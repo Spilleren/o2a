@@ -50,8 +50,11 @@ mod tests {
     use std::collections::BTreeMap;
 
     use crate::{
-        openapi::ParameterLocation::Header,
-        spec::{Operation, PathItem, Server},
+        openapi::{
+            ParameterLocation::{Header, Query},
+            SecurityScheme,
+        },
+        spec::{Components, Operation, PathItem, Server},
     };
 
     use super::*;
@@ -77,7 +80,7 @@ mod tests {
                 url: "https://api.example.com".to_owned(),
             }],
             paths: BTreeMap::new(),
-            components: serde_json::json!({}),
+            components: Components::default(),
         };
 
         let config = generate_config(&spec);
@@ -114,7 +117,7 @@ BASE_URL="https://api.example.com"
                     ..Default::default()
                 },
             )]),
-            components: serde_json::json!({}),
+            components: Components::default(),
         };
         let config = generate_config(&spec);
 
@@ -132,20 +135,24 @@ X_DB_CORRELATION_ID=""
         let spec = Spec {
             servers: vec![],
             paths: BTreeMap::new(),
-            components: serde_json::json!({
-                "securitySchemes": {
-                    "clientIdHeader": {
-                        "type": "apiKey",
-                        "name": "X-IBM-Client-Id",
-                        "in": "header"
-                    },
-                    "ignoredQueryKey": {
-                        "type": "apiKey",
-                        "name": "api_key",
-                        "in": "query"
-                    }
-                }
-            }),
+            components: Components {
+                security_schemes: BTreeMap::from([
+                    (
+                        "clientIdHeader".to_owned(),
+                        SecurityScheme::ApiKey {
+                            name: "X-IBM-Client-Id".to_owned(),
+                            location: Header,
+                        },
+                    ),
+                    (
+                        "ignoredQueryKey".to_owned(),
+                        SecurityScheme::ApiKey {
+                            name: "api_key".to_owned(),
+                            location: Query,
+                        },
+                    ),
+                ]),
+            },
         };
 
         let config = generate_config(&spec);

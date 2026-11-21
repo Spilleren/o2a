@@ -1,16 +1,24 @@
 use std::collections::BTreeMap;
 
-use serde_json::Value;
-
-use crate::openapi::Parameter;
+use crate::openapi::{Parameter, SecurityScheme};
 
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Spec {
+    #[serde(default)]
     pub servers: Vec<Server>,
 
+    #[serde(default)]
     pub paths: BTreeMap<String, PathItem>,
 
-    pub components: Value,
+    #[serde(default)]
+    pub components: Components,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Components {
+    #[serde(default)]
+    pub security_schemes: BTreeMap<String, SecurityScheme>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -99,6 +107,37 @@ fn prefer_https(url: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::openapi::ParameterLocation;
+
+    #[test]
+    fn given_json_when_parsing_spec_then_components_are_typed() {
+        let spec = parse_spec(
+            r#"{
+                "servers": [],
+                "paths": {},
+                "components": {
+                    "securitySchemes": {
+                        "clientIdHeader": { "type": "apiKey", "name": "X-Client-Id", "in": "header" }
+                    }
+                }
+            }"#,
+        );
+
+        assert_eq!(
+            spec.components.security_schemes.get("clientIdHeader"),
+            Some(&SecurityScheme::ApiKey {
+                name: "X-Client-Id".to_owned(),
+                location: ParameterLocation::Header,
+            })
+        );
+    }
+
+    #[test]
+    fn given_json_without_components_when_parsing_then_empty_components() {
+        let spec = parse_spec(r#"{ "servers": [], "paths": {} }"#);
+
+        assert_eq!(spec.components, Components::default());
+    }
 
     #[test]
     fn given_spec_when_parsing_then_typed_fields_are_readable() {
@@ -191,7 +230,7 @@ mod tests {
         let spec = Spec {
             servers: vec![],
             paths: BTreeMap::new(),
-            components: serde_json::json!({}),
+            components: Components::default(),
         };
         assert_eq!(extract_default_server(&spec), "https://localhost")
     }
@@ -205,7 +244,7 @@ mod tests {
                 url: url.to_string(),
             }],
             paths: BTreeMap::new(),
-            components: serde_json::json!({}),
+            components: Components::default(),
         };
 
         let expected = url.replace("http", "https");
@@ -221,7 +260,7 @@ mod tests {
                 url: url.to_string(),
             }],
             paths: BTreeMap::new(),
-            components: serde_json::json!({}),
+            components: Components::default(),
         };
 
         assert_eq!(extract_default_server(&spec), url);
