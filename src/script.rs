@@ -1,6 +1,4 @@
-use crate::config::bash_variable_name;
-use crate::openapi::operation_parameters;
-use crate::spec::{Operation, Parameter, ParameterLocation};
+use crate::spec::{Operation, Parameter, ParameterLocation, bash_variable_name};
 
 pub fn generate_script(
     path: &str,
@@ -10,9 +8,9 @@ pub fn generate_script(
     security_headers: &[Parameter],
 ) -> String {
     let uc_method = method.to_uppercase();
-    let header_parameters = operation_parameters(operation, ParameterLocation::Header);
-    let path_parameters = operation_parameters(operation, ParameterLocation::Path);
-    let query_parameters = operation_parameters(operation, ParameterLocation::Query);
+    let header_parameters = operation.parameters_by(ParameterLocation::Header);
+    let path_parameters = operation.parameters_by(ParameterLocation::Path);
+    let query_parameters = operation.parameters_by(ParameterLocation::Query);
 
     let mut headers = parameters_to_flags(&header_parameters, |name, var| format!("--header \"{name}: ${var}\""));
 

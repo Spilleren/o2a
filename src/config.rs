@@ -1,5 +1,5 @@
-use crate::openapi::{header_security_schemes, spec_parameters};
-use crate::spec::{Parameter, ParameterLocation, Spec, extract_default_server};
+use crate::openapi::spec_parameters;
+use crate::spec::{Parameter, ParameterLocation, Spec, bash_variable_name, prefer_https};
 
 pub fn generate_config(spec: &Spec) -> String {
     let mut variables = std::collections::BTreeSet::new();
@@ -9,14 +9,11 @@ pub fn generate_config(spec: &Spec) -> String {
     collect_header_security_schemes(spec, &mut variables);
 
     let mut lines = vec!["#!/bin/bash".to_string()];
-    lines.push(format!("BASE_URL=\"{}\"", extract_default_server(spec)));
+    let default_server = spec.servers.first().map(|server| server.url.as_str()).unwrap_or("http://localhost");
+    lines.push(format!("BASE_URL=\"{}\"", prefer_https(default_server)));
     lines.extend(variables.into_iter().map(|name| format!("{name}=\"\"")));
     lines.push(String::new());
     lines.join("\n")
-}
-
-pub fn bash_variable_name(name: &str) -> String {
-    name.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_uppercase() } else { '_' }).collect()
 }
 
 fn collect_header_parameters(parameters: &[Parameter], variables: &mut std::collections::BTreeSet<String>) {
@@ -26,7 +23,7 @@ fn collect_header_parameters(parameters: &[Parameter], variables: &mut std::coll
 }
 
 fn collect_header_security_schemes(spec: &Spec, variables: &mut std::collections::BTreeSet<String>) {
-    for scheme in header_security_schemes(spec) {
+    for scheme in spec.header_security_schemes() {
         variables.insert(bash_variable_name(&scheme.name));
     }
 }
@@ -43,16 +40,6 @@ mod tests {
 
     use super::*;
     use pretty_assertions::assert_eq;
-
-    #[test]
-    fn given_name_with_hyphens_when_normalizing_then_uses_uppercase_underscores() {
-        assert_eq!(bash_variable_name("X-DB-Correlation-Id"), "X_DB_CORRELATION_ID");
-    }
-
-    #[test]
-    fn given_camel_case_name_when_normalizing_then_uppercases_without_extra_underscores() {
-        assert_eq!(bash_variable_name("accountFilterId"), "ACCOUNTFILTERID");
-    }
 
     #[test]
     fn given_server_when_generating_config_then_contains_base_url() {

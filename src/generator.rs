@@ -1,15 +1,14 @@
 use crate::config::generate_config;
-use crate::openapi::header_security_schemes;
 use crate::path::{path_to_folders, relative_config_path};
 use crate::script::generate_script;
-use crate::spec::{Spec, extract_paths};
+use crate::spec::Spec;
 
 use std::fs;
 use std::os::unix::fs::PermissionsExt;
 
 pub fn generate_files(spec: &Spec, output_dir: &std::path::Path) -> std::io::Result<()> {
-    let paths = extract_paths(spec);
-    let security_headers = header_security_schemes(spec);
+    let paths = &spec.paths;
+    let security_headers = spec.header_security_schemes();
 
     fs::create_dir_all(output_dir)?;
     fs::write(output_dir.join(".config.sh"), generate_config(spec))?;

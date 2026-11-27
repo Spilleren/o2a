@@ -1,27 +1,11 @@
-use crate::spec::{Operation, Parameter, ParameterLocation, SecurityScheme, Spec};
+use crate::spec::{Parameter, ParameterLocation, Spec};
 
 pub fn spec_parameters(spec: &Spec, location: ParameterLocation) -> Vec<Parameter> {
     let paths = spec.paths.values();
 
     paths
         .flat_map(|path_item| path_item.operations())
-        .flat_map(|(_, operation)| operation_parameters(operation, location))
-        .collect()
-}
-pub fn operation_parameters(operation: &Operation, location: ParameterLocation) -> Vec<Parameter> {
-    operation.parameters.iter().filter(|parameter| parameter.location == location).cloned().collect()
-}
-
-pub fn header_security_schemes(spec: &Spec) -> Vec<Parameter> {
-    spec.components
-        .security_schemes
-        .values()
-        .filter_map(|scheme| match scheme {
-            SecurityScheme::ApiKey { name, location } if *location == ParameterLocation::Header => {
-                Some(Parameter { name: name.clone(), location: *location, required: true })
-            }
-            _ => None,
-        })
+        .flat_map(|(_, operation)| operation.parameters_by(location))
         .collect()
 }
 
@@ -29,7 +13,7 @@ pub fn header_security_schemes(spec: &Spec) -> Vec<Parameter> {
 #[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use crate::openapi::ParameterLocation::Header;
-    use crate::spec::{Components, PathItem, parse_spec};
+    use crate::spec::{Components, Operation, PathItem, parse_spec};
 
     use super::*;
     use std::collections::BTreeMap;
@@ -50,12 +34,9 @@ mod tests {
         )
         .unwrap();
 
-        let headers = header_security_schemes(&spec);
+        let headers = spec.header_security_schemes();
 
-        assert_eq!(
-            headers,
-            vec![Parameter { name: "api_key".to_owned(), location: ParameterLocation::Header, required: true }]
-        );
+        assert_eq!(headers, vec![Parameter { name: "api_key".to_owned(), location: Header, required: true }]);
     }
 
     #[test]

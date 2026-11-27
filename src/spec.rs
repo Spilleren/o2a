@@ -12,6 +12,21 @@ pub struct Spec {
     pub components: Components,
 }
 
+impl Spec {
+    pub fn header_security_schemes(&self) -> Vec<Parameter> {
+        self.components
+            .security_schemes
+            .values()
+            .filter_map(|scheme| match scheme {
+                SecurityScheme::ApiKey { name, location } if *location == ParameterLocation::Header => {
+                    Some(Parameter { name: name.clone(), location: *location, required: true })
+                }
+                _ => None,
+            })
+            .collect()
+    }
+}
+
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Server {
     pub url: String,
@@ -68,6 +83,12 @@ pub struct Operation {
     pub parameters: Vec<Parameter>,
 }
 
+impl Operation {
+    pub fn parameters_by(&self, location: ParameterLocation) -> Vec<Parameter> {
+        self.parameters.iter().filter(|p| p.location == location).cloned().collect()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, serde::Deserialize)]
 pub struct Parameter {
     pub name: String,
@@ -112,22 +133,17 @@ pub enum SecurityScheme {
         open_id_connect_url: String,
     },
 }
-pub fn extract_default_server(spec: &Spec) -> String {
-    let url = spec.servers.first().map(|server| server.url.as_str()).unwrap_or("http://localhost").to_string();
-
-    prefer_https(&url)
-}
 
 pub fn parse_spec(contents: &str) -> Result<Spec, serde_json::Error> {
     serde_json::from_str(contents)
 }
 
-pub fn extract_paths(spec: &Spec) -> &BTreeMap<String, PathItem> {
-    &spec.paths
+pub(crate) fn prefer_https(url: &str) -> String {
+    if let Some(rest) = url.strip_prefix("http://") { format!("https://{}", rest) } else { url.to_string() }
 }
 
-fn prefer_https(url: &str) -> String {
-    if let Some(rest) = url.strip_prefix("http://") { format!("https://{}", rest) } else { url.to_string() }
+pub fn bash_variable_name(name: &str) -> String {
+    name.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_uppercase() } else { '_' }).collect()
 }
 
 #[cfg(test)]
@@ -249,37 +265,13 @@ mod tests {
             }
         )
     }
-
     #[test]
-    fn given_spec_with_no_server_when_extracting_default_server_then_localhost() {
-        let spec = Spec { servers: vec![], paths: BTreeMap::new(), components: Components::default() };
-        assert_eq!(extract_default_server(&spec), "https://localhost")
+    fn given_name_with_hyphens_when_normalizing_then_uses_uppercase_underscores() {
+        assert_eq!(bash_variable_name("X-DB-Correlation-Id"), "X_DB_CORRELATION_ID");
     }
 
     #[test]
-    fn given_spec_with_http_server_when_extracting_default_server_then_server_with_https() {
-        let url = "http://api.example.com";
-
-        let spec = Spec {
-            servers: vec![Server { url: url.to_string() }],
-            paths: BTreeMap::new(),
-            components: Components::default(),
-        };
-
-        let expected = url.replace("http", "https");
-        assert_eq!(extract_default_server(&spec), expected);
-    }
-
-    #[test]
-    fn given_spec_when_extracting_default_server_then_server() {
-        let url = "https://api.example.com";
-
-        let spec = Spec {
-            servers: vec![Server { url: url.to_string() }],
-            paths: BTreeMap::new(),
-            components: Components::default(),
-        };
-
-        assert_eq!(extract_default_server(&spec), url);
+    fn given_camel_case_name_when_normalizing_then_uppercases_without_extra_underscores() {
+        assert_eq!(bash_variable_name("accountFilterId"), "ACCOUNTFILTERID");
     }
 }
