@@ -104,6 +104,7 @@ X_DB_CORRELATION_ID=""
                         SecurityScheme::ApiKey { name: "api_key".to_owned(), location: Query },
                     ),
                 ]),
+                parameters: BTreeMap::new(),
             },
         };
 

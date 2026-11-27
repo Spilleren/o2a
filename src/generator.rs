@@ -39,7 +39,7 @@ mod tests {
     use crate::spec::{
         Components, Operation, Parameter,
         ParameterLocation::{Header, Path},
-        PathItem, SecurityScheme, Server,
+        PathItem, Server, parse_spec,
     };
 
     use super::*;
@@ -156,29 +156,59 @@ curl "${args[@]}""#
     }
 
     #[test]
-    fn given_header_security_scheme_when_generating_files_then_endpoint_script_contains_security_header() {
-        let spec = Spec {
-            servers: vec![Server { url: "https://api.example.com".to_owned() }],
-            paths: BTreeMap::from([(
-                "/v1/users".to_owned(),
-                PathItem { get: Some(Operation { parameters: vec![] }), ..Default::default() },
-            )]),
-            components: Components {
-                security_schemes: BTreeMap::from([(
-                    "clientIdHeader".to_owned(),
-                    SecurityScheme::ApiKey { name: "X-IBM-Client-Id".to_owned(), location: Header },
-                )]),
+    fn given_spec_with_ref_parameters_and_security_schemes_when_generating_then_output_is_resolved() {
+        let json = r##"{
+            "servers": [{"url": "https://api.example.com"}],
+            "paths": {
+                "/v1/items": {
+                    "get": {
+                        "parameters": [
+                            {"$ref": "#/components/parameters/AcceptLang"},
+                            {"name": "limit", "in": "query", "required": false}
+                        ]
+                    }
+                }
             },
-        };
+            "components": {
+                "parameters": {
+                    "AcceptLang": { "name": "Accept-Language", "in": "header", "required": true }
+                },
+                "securitySchemes": {
+                    "apiKey": { "type": "apiKey", "name": "X-API-Key", "in": "header" }
+                }
+            }
+        }"##;
 
-        let output_dir = test_output_dir("security-header");
+        let spec = parse_spec(json).unwrap();
+        let output_dir = test_output_dir("ref-golden");
 
         generate_files(&spec, &output_dir).unwrap();
 
-        let script = std::fs::read_to_string(output_dir.join("v1/users/get")).unwrap();
-        assert!(
-            script.contains(r#"--header "X-IBM-Client-Id: $X_IBM_CLIENT_ID""#),
-            "expected generated script to contain security scheme header, got:\n{script}"
+        let config = std::fs::read_to_string(output_dir.join(".config.sh")).unwrap();
+        // Security scheme from resolved ref should appear
+        assert!(config.contains("X_API_KEY"), "expected X_API_KEY in config, got:\n{config}");
+        // Header parameter from resolved ref should appear
+        assert!(config.contains("ACCEPT_LANGUAGE"), "expected ACCEPT_LANGUAGE in config, got:\n{config}");
+
+        let script = std::fs::read_to_string(output_dir.join("v1/items/get")).unwrap();
+        // Script should contain the resolved Accept-Language header and X-API-Key security header
+        assert_eq!(
+            script,
+            r#"#!/bin/bash
+source "$(dirname "$0")/../../.config.sh"
+
+LIMIT=""
+
+args=(
+  --request GET
+  --url "$BASE_URL/v1/items"
+  --header "Accept-Language: $ACCEPT_LANGUAGE"
+  --header "X-API-Key: $X_API_KEY"
+)
+
+[[ -n "$LIMIT" ]] && args+=(--url-query "limit=$LIMIT")
+
+curl "${args[@]}""#
         );
 
         std::fs::remove_dir_all(output_dir).unwrap();
