@@ -1,5 +1,5 @@
-use crate::openapi::{Parameter, ParameterLocation, header_security_schemes, spec_parameters};
-use crate::spec::{Spec, extract_default_server};
+use crate::openapi::{header_security_schemes, spec_parameters};
+use crate::spec::{Parameter, ParameterLocation, Spec, extract_default_server};
 
 pub fn generate_config(spec: &Spec) -> String {
     let mut variables = std::collections::BTreeSet::new();
@@ -16,30 +16,16 @@ pub fn generate_config(spec: &Spec) -> String {
 }
 
 pub fn bash_variable_name(name: &str) -> String {
-    name.chars()
-        .map(|c| {
-            if c.is_ascii_alphanumeric() {
-                c.to_ascii_uppercase()
-            } else {
-                '_'
-            }
-        })
-        .collect()
+    name.chars().map(|c| if c.is_ascii_alphanumeric() { c.to_ascii_uppercase() } else { '_' }).collect()
 }
 
-fn collect_header_parameters(
-    parameters: &[Parameter],
-    variables: &mut std::collections::BTreeSet<String>,
-) {
+fn collect_header_parameters(parameters: &[Parameter], variables: &mut std::collections::BTreeSet<String>) {
     for parameter in parameters {
         variables.insert(bash_variable_name(&parameter.name));
     }
 }
 
-fn collect_header_security_schemes(
-    spec: &Spec,
-    variables: &mut std::collections::BTreeSet<String>,
-) {
+fn collect_header_security_schemes(spec: &Spec, variables: &mut std::collections::BTreeSet<String>) {
     for scheme in header_security_schemes(spec) {
         variables.insert(bash_variable_name(&scheme.name));
     }
@@ -49,12 +35,10 @@ fn collect_header_security_schemes(
 mod tests {
     use std::collections::BTreeMap;
 
-    use crate::{
-        openapi::{
-            ParameterLocation::{Header, Query},
-            SecurityScheme,
-        },
-        spec::{Components, Operation, PathItem, Server},
+    use crate::spec::{
+        Components, Operation,
+        ParameterLocation::{Header, Query},
+        PathItem, SecurityScheme, Server,
     };
 
     use super::*;
@@ -62,10 +46,7 @@ mod tests {
 
     #[test]
     fn given_name_with_hyphens_when_normalizing_then_uses_uppercase_underscores() {
-        assert_eq!(
-            bash_variable_name("X-DB-Correlation-Id"),
-            "X_DB_CORRELATION_ID"
-        );
+        assert_eq!(bash_variable_name("X-DB-Correlation-Id"), "X_DB_CORRELATION_ID");
     }
 
     #[test]
@@ -76,9 +57,7 @@ mod tests {
     #[test]
     fn given_server_when_generating_config_then_contains_base_url() {
         let spec = Spec {
-            servers: vec![Server {
-                url: "https://api.example.com".to_owned(),
-            }],
+            servers: vec![Server { url: "https://api.example.com".to_owned() }],
             paths: BTreeMap::new(),
             components: Components::default(),
         };
@@ -102,16 +81,8 @@ BASE_URL="https://api.example.com"
                 PathItem {
                     get: Some(Operation {
                         parameters: vec![
-                            Parameter {
-                                name: "Accept-Language".to_owned(),
-                                location: Header,
-                                required: false,
-                            },
-                            Parameter {
-                                name: "X-DB-Correlation-Id".to_owned(),
-                                location: Header,
-                                required: true,
-                            },
+                            Parameter { name: "Accept-Language".to_owned(), location: Header, required: false },
+                            Parameter { name: "X-DB-Correlation-Id".to_owned(), location: Header, required: true },
                         ],
                     }),
                     ..Default::default()
@@ -139,17 +110,11 @@ X_DB_CORRELATION_ID=""
                 security_schemes: BTreeMap::from([
                     (
                         "clientIdHeader".to_owned(),
-                        SecurityScheme::ApiKey {
-                            name: "X-IBM-Client-Id".to_owned(),
-                            location: Header,
-                        },
+                        SecurityScheme::ApiKey { name: "X-IBM-Client-Id".to_owned(), location: Header },
                     ),
                     (
                         "ignoredQueryKey".to_owned(),
-                        SecurityScheme::ApiKey {
-                            name: "api_key".to_owned(),
-                            location: Query,
-                        },
+                        SecurityScheme::ApiKey { name: "api_key".to_owned(), location: Query },
                     ),
                 ]),
             },

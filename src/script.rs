@@ -1,6 +1,6 @@
 use crate::config::bash_variable_name;
-use crate::openapi::{Parameter, ParameterLocation, operation_parameters};
-use crate::spec::Operation;
+use crate::openapi::operation_parameters;
+use crate::spec::{Operation, Parameter, ParameterLocation};
 
 pub fn generate_script(
     path: &str,
@@ -14,30 +14,20 @@ pub fn generate_script(
     let path_parameters = operation_parameters(operation, ParameterLocation::Path);
     let query_parameters = operation_parameters(operation, ParameterLocation::Query);
 
-    let mut headers = parameters_to_flags(&header_parameters, |name, var| {
-        format!("--header \"{name}: ${var}\"")
-    });
+    let mut headers = parameters_to_flags(&header_parameters, |name, var| format!("--header \"{name}: ${var}\""));
 
-    headers.extend(parameters_to_flags(security_headers, |name, var| {
-        format!("--header \"{name}: ${var}\"")
-    }));
+    headers.extend(parameters_to_flags(security_headers, |name, var| format!("--header \"{name}: ${var}\"")));
 
     let path = replace_path_params(path);
     let url = format!("$BASE_URL{path}");
 
-    let mut args: Vec<String> = vec![
-        format!("  --request {uc_method}"),
-        format!("  --url \"{url}\""),
-    ];
+    let mut args: Vec<String> = vec![format!("  --request {uc_method}"), format!("  --url \"{url}\"")];
     args.extend(headers.iter().map(|h| format!("  {h}")));
 
     let query_lines = parameters_to_query_lines(&query_parameters);
     let guards = parameters_to_guards(&query_parameters);
 
-    let script_parameters: Vec<Parameter> = path_parameters
-        .into_iter()
-        .chain(query_parameters)
-        .collect();
+    let script_parameters: Vec<Parameter> = path_parameters.into_iter().chain(query_parameters).collect();
 
     let variables = parameters_to_variables(&script_parameters);
 
@@ -90,10 +80,7 @@ fn parameters_to_guards(params: &[Parameter]) -> Vec<String> {
         .collect()
 }
 
-fn parameters_to_flags(
-    params: &[Parameter],
-    format_fn: impl Fn(&str, &str) -> String,
-) -> Vec<String> {
+fn parameters_to_flags(params: &[Parameter], format_fn: impl Fn(&str, &str) -> String) -> Vec<String> {
     params
         .iter()
         .map(|p| {
@@ -105,10 +92,7 @@ fn parameters_to_flags(
 }
 
 fn parameters_to_variables(params: &[Parameter]) -> Vec<String> {
-    params
-        .iter()
-        .map(|p| format!("{}=\"\"", bash_variable_name(p.name.as_str())))
-        .collect()
+    params.iter().map(|p| format!("{}=\"\"", bash_variable_name(p.name.as_str()))).collect()
 }
 
 fn replace_path_params(path: &str) -> String {
@@ -127,14 +111,13 @@ fn replace_path_params(path: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use crate::openapi::ParameterLocation::{Header, Path, Query};
+    use crate::spec::ParameterLocation::{Header, Path, Query};
 
     use super::*;
     use pretty_assertions::assert_eq;
 
     #[test]
-    fn given_get_operation_with_no_parameters_when_generating_script_then_produces_correct_curl_command()
-     {
+    fn given_get_operation_with_no_parameters_when_generating_script_then_produces_correct_curl_command() {
         let operation = Operation { parameters: vec![] };
         let script = generate_script("/users", "get", &operation, "../config.sh", &[]);
 
@@ -155,11 +138,7 @@ curl "${args[@]}""#
     #[test]
     fn given_operation_with_header_parameter_when_generating_script_then_contains_header() {
         let operation = Operation {
-            parameters: vec![Parameter {
-                name: "X-DB-Correlation-Id".to_owned(),
-                location: Header,
-                required: true,
-            }],
+            parameters: vec![Parameter { name: "X-DB-Correlation-Id".to_owned(), location: Header, required: true }],
         };
 
         let script = generate_script("/users", "get", &operation, "../../config.sh", &[]);
@@ -180,20 +159,11 @@ curl "${args[@]}""#
     }
 
     #[test]
-    fn given_operation_with_multiple_header_parameter_when_generating_script_then_contains_header()
-    {
+    fn given_operation_with_multiple_header_parameter_when_generating_script_then_contains_header() {
         let operation = Operation {
             parameters: vec![
-                Parameter {
-                    name: "Authorization".to_owned(),
-                    location: Header,
-                    required: true,
-                },
-                Parameter {
-                    name: "AcceptLanguage".to_owned(),
-                    location: Header,
-                    required: true,
-                },
+                Parameter { name: "Authorization".to_owned(), location: Header, required: true },
+                Parameter { name: "AcceptLanguage".to_owned(), location: Header, required: true },
             ],
         };
 
@@ -216,23 +186,12 @@ curl "${args[@]}""#
     }
 
     #[test]
-    fn given_operation_with_path_parameter_when_generating_script_then_url_contains_shell_variable()
-    {
+    fn given_operation_with_path_parameter_when_generating_script_then_url_contains_shell_variable() {
         let operation = Operation {
-            parameters: vec![Parameter {
-                name: "account-filter-id".to_owned(),
-                location: Path,
-                required: true,
-            }],
+            parameters: vec![Parameter { name: "account-filter-id".to_owned(), location: Path, required: true }],
         };
 
-        let script = generate_script(
-            "/users/{account-filter-id}",
-            "get",
-            &operation,
-            "../../config.sh",
-            &[],
-        );
+        let script = generate_script("/users/{account-filter-id}", "get", &operation, "../../config.sh", &[]);
 
         assert_eq!(
             script,
@@ -251,20 +210,11 @@ curl "${args[@]}""#
     }
 
     #[test]
-    fn given_operation_with_query_parameters_when_generating_script_then_contains_query_parameters()
-    {
+    fn given_operation_with_query_parameters_when_generating_script_then_contains_query_parameters() {
         let operation = Operation {
             parameters: vec![
-                Parameter {
-                    name: "status".to_owned(),
-                    location: Query,
-                    required: true,
-                },
-                Parameter {
-                    name: "limit".to_owned(),
-                    location: Query,
-                    required: true,
-                },
+                Parameter { name: "status".to_owned(), location: Query, required: true },
+                Parameter { name: "limit".to_owned(), location: Query, required: true },
             ],
         };
         let script = generate_script("/users", "get", &operation, "../../config.sh", &[]);
@@ -293,20 +243,11 @@ curl "${args[@]}""#
     }
 
     #[test]
-    fn given_operation_with_required_and_optional_query_parameters_when_generating_script_then_query_parameters()
-     {
+    fn given_operation_with_required_and_optional_query_parameters_when_generating_script_then_query_parameters() {
         let operation = Operation {
             parameters: vec![
-                Parameter {
-                    name: "status".to_owned(),
-                    location: Query,
-                    required: true,
-                },
-                Parameter {
-                    name: "limit".to_owned(),
-                    location: Query,
-                    required: false,
-                },
+                Parameter { name: "status".to_owned(), location: Query, required: true },
+                Parameter { name: "limit".to_owned(), location: Query, required: false },
             ],
         };
 
@@ -335,15 +276,9 @@ curl "${args[@]}""#
     }
 
     #[test]
-    fn given_operation_with_optional_query_parameters_when_generating_script_then_query_parameters()
-    {
-        let operation = Operation {
-            parameters: vec![Parameter {
-                name: "limit".to_owned(),
-                location: Query,
-                required: false,
-            }],
-        };
+    fn given_operation_with_optional_query_parameters_when_generating_script_then_query_parameters() {
+        let operation =
+            Operation { parameters: vec![Parameter { name: "limit".to_owned(), location: Query, required: false }] };
 
         let script = generate_script("/users", "get", &operation, "../../config.sh", &[]);
 
@@ -368,13 +303,8 @@ curl "${args[@]}""#
     #[test]
     fn given_operation_with_optional_query_parameters_with_no_required_field_when_generating_script_then_query_parameters()
      {
-        let operation = Operation {
-            parameters: vec![Parameter {
-                name: "limit".to_owned(),
-                location: Query,
-                required: false,
-            }],
-        };
+        let operation =
+            Operation { parameters: vec![Parameter { name: "limit".to_owned(), location: Query, required: false }] };
 
         let script = generate_script("/users", "get", &operation, "../../config.sh", &[]);
 
@@ -397,20 +327,11 @@ curl "${args[@]}""#
     }
 
     #[test]
-    fn given_operation_with_query_and_path_parameters_when_generating_script_then_contains_query_parameters()
-     {
+    fn given_operation_with_query_and_path_parameters_when_generating_script_then_contains_query_parameters() {
         let operation = Operation {
             parameters: vec![
-                Parameter {
-                    name: "status".to_owned(),
-                    location: Query,
-                    required: true,
-                },
-                Parameter {
-                    name: "id".to_owned(),
-                    location: Path,
-                    required: true,
-                },
+                Parameter { name: "status".to_owned(), location: Query, required: true },
+                Parameter { name: "id".to_owned(), location: Path, required: true },
             ],
         };
 
@@ -446,13 +367,7 @@ curl "${args[@]}""#
             location: ParameterLocation::Header,
             required: true,
         }];
-        let script = generate_script(
-            "/users",
-            "get",
-            &operation,
-            "../.config.sh",
-            &security_headers,
-        );
+        let script = generate_script("/users", "get", &operation, "../.config.sh", &security_headers);
 
         assert_eq!(
             script,

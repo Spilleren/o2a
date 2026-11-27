@@ -1,7 +1,5 @@
 use std::collections::BTreeMap;
 
-use crate::openapi::{Parameter, SecurityScheme};
-
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct Spec {
     #[serde(default)]
@@ -12,13 +10,6 @@ pub struct Spec {
 
     #[serde(default)]
     pub components: Components,
-}
-
-#[derive(Debug, Clone, Default, PartialEq, serde::Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Components {
-    #[serde(default)]
-    pub security_schemes: BTreeMap<String, SecurityScheme>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -77,19 +68,58 @@ pub struct Operation {
     pub parameters: Vec<Parameter>,
 }
 
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+pub struct Parameter {
+    pub name: String,
+
+    #[serde(rename = "in")]
+    pub location: ParameterLocation,
+
+    #[serde(default)]
+    pub required: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum ParameterLocation {
+    Header,
+    Query,
+    Path,
+}
+
+#[derive(Debug, Clone, Default, PartialEq, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Components {
+    #[serde(default)]
+    pub security_schemes: BTreeMap<String, SecurityScheme>,
+}
+
+#[derive(Debug, Clone, PartialEq, serde::Deserialize)]
+#[serde(tag = "type", rename_all = "camelCase")]
+pub enum SecurityScheme {
+    ApiKey {
+        name: String,
+
+        #[serde(rename = "in")]
+        location: ParameterLocation,
+    },
+    Http {
+        scheme: String,
+    },
+    #[serde(rename = "oauth2")]
+    OAuth2,
+    OpenIdConnect {
+        open_id_connect_url: String,
+    },
+}
 pub fn extract_default_server(spec: &Spec) -> String {
-    let url = spec
-        .servers
-        .first()
-        .map(|server| server.url.as_str())
-        .unwrap_or("http://localhost")
-        .to_string();
+    let url = spec.servers.first().map(|server| server.url.as_str()).unwrap_or("http://localhost").to_string();
 
     prefer_https(&url)
 }
 
-pub fn parse_spec(contents: &str) -> Spec {
-    serde_json::from_str(contents).expect("Invalid JSON")
+pub fn parse_spec(contents: &str) -> Result<Spec, serde_json::Error> {
+    serde_json::from_str(contents)
 }
 
 pub fn extract_paths(spec: &Spec) -> &BTreeMap<String, PathItem> {
@@ -97,17 +127,13 @@ pub fn extract_paths(spec: &Spec) -> &BTreeMap<String, PathItem> {
 }
 
 fn prefer_https(url: &str) -> String {
-    if let Some(rest) = url.strip_prefix("http://") {
-        format!("https://{}", rest)
-    } else {
-        url.to_string()
-    }
+    if let Some(rest) = url.strip_prefix("http://") { format!("https://{}", rest) } else { url.to_string() }
 }
 
 #[cfg(test)]
+#[allow(clippy::expect_used, clippy::unwrap_used)]
 mod tests {
     use super::*;
-    use crate::openapi::ParameterLocation;
 
     #[test]
     fn given_json_when_parsing_spec_then_components_are_typed() {
@@ -121,20 +147,18 @@ mod tests {
                     }
                 }
             }"#,
-        );
+        )
+        .unwrap();
 
         assert_eq!(
             spec.components.security_schemes.get("clientIdHeader"),
-            Some(&SecurityScheme::ApiKey {
-                name: "X-Client-Id".to_owned(),
-                location: ParameterLocation::Header,
-            })
+            Some(&SecurityScheme::ApiKey { name: "X-Client-Id".to_owned(), location: ParameterLocation::Header })
         );
     }
 
     #[test]
     fn given_json_without_components_when_parsing_then_empty_components() {
-        let spec = parse_spec(r#"{ "servers": [], "paths": {} }"#);
+        let spec = parse_spec(r#"{ "servers": [], "paths": {} }"#).unwrap();
 
         assert_eq!(spec.components, Components::default());
     }
@@ -153,7 +177,8 @@ mod tests {
                     }
                 }
             }"#,
-        );
+        )
+        .unwrap();
 
         assert_eq!(spec.servers[0].url, "https://api.example.com");
     }
@@ -218,7 +243,7 @@ mod tests {
             Operation {
                 parameters: vec![Parameter {
                     name: "limit".to_owned(),
-                    location: crate::openapi::ParameterLocation::Query,
+                    location: ParameterLocation::Query,
                     required: true,
                 }],
             }
@@ -227,11 +252,7 @@ mod tests {
 
     #[test]
     fn given_spec_with_no_server_when_extracting_default_server_then_localhost() {
-        let spec = Spec {
-            servers: vec![],
-            paths: BTreeMap::new(),
-            components: Components::default(),
-        };
+        let spec = Spec { servers: vec![], paths: BTreeMap::new(), components: Components::default() };
         assert_eq!(extract_default_server(&spec), "https://localhost")
     }
 
@@ -240,9 +261,7 @@ mod tests {
         let url = "http://api.example.com";
 
         let spec = Spec {
-            servers: vec![Server {
-                url: url.to_string(),
-            }],
+            servers: vec![Server { url: url.to_string() }],
             paths: BTreeMap::new(),
             components: Components::default(),
         };
@@ -256,9 +275,7 @@ mod tests {
         let url = "https://api.example.com";
 
         let spec = Spec {
-            servers: vec![Server {
-                url: url.to_string(),
-            }],
+            servers: vec![Server { url: url.to_string() }],
             paths: BTreeMap::new(),
             components: Components::default(),
         };

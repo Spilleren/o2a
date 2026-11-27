@@ -9,3 +9,42 @@ rand = "0.10.1"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 url = "2.5.8"
+
+[lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unused_must_use = "warn"
+
+unsafe_op_in_unsafe_fn = "warn"
+missing_copy_implementations = "warn"
+missing_debug_implementations = "warn"
+trivial_casts = "warn"
+trivial_numeric_casts = "warn"
+variant_size_differences = "warn"
+
+[lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+panic = "warn"
+todo = "warn"
+unimplemented = "warn"
+dbg_macro = "warn"
+print_stdout = "warn"
+
+too_many_lines = "warn"
+module_name_repetitions = "warn"
+must_use_candidate = "warn"
+return_self_not_must_use = "warn"
+clone_on_ref_ptr = "warn"
+manual_assert = "warn"
+verbose_bit_mask = "warn"
+cast_possible_truncation = "warn"
+cast_sign_loss = "warn"
+
+large_stack_arrays = "warn"
+large_types_passed_by_value = "warn"
+needless_pass_by_value = "warn"
+
+doc_markdown = "warn"
+missing_errors_doc = "warn"
+missing_panics_doc = "warn"
